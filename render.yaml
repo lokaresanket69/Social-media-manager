@@ -1,0 +1,47 @@
+# render.yaml
+# This file configures the deployment of the Social Media Automation tool on Render.
+# It defines two services: a backend web service for the Flask app and a static site for the React frontend.
+
+services:
+  # ----------------- Backend Service (Flask App) -----------------
+  - type: web
+    name: social-media-backend
+    env: python
+    # All paths are relative to the repository root.
+    # Our Python app is inside the 'Youtube automation' directory.
+    rootDir: ./Youtube automation
+    buildCommand: "pip install -r requirements.txt"
+    # The command to start the Gunicorn server.
+    startCommand: "gunicorn app:app"
+    # Environment variables configuration.
+    # IMPORTANT: You must manually add your secret values in the Render dashboard.
+    # Go to Environment -> Add Environment Group and create a group from your .env file.
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0 # Specify a Python version
+      - key: SECRET_KEY
+        # Generate a random string for this in Render
+        generateValue: true
+      # --- Add all your other secret keys from .env here ---
+      # Example:
+      # - key: TWITTER_API_KEY_1
+      #   value: your_value_here
+      # - key: INSTAGRAM_USERNAME_1
+      #   value: your_value_here
+      # (Do not commit your actual secrets to this file)
+
+  # ----------------- Frontend Service (React App) -----------------
+  - type: web
+    name: social-media-frontend
+    env: static
+    # The frontend code is in the 'Youtube automation/frontend' directory.
+    rootDir: ./Youtube automation/frontend
+    # Standard React build commands.
+    buildCommand: "npm install && npm run build"
+    # The directory where the built static files are located.
+    publishPath: "build"
+    # Rewrite all requests to index.html to support client-side routing.
+    routes:
+      - type: rewrite
+        source: "/*"
+        destination: "/index.html" 

@@ -6,4 +6,5 @@ python-dotenv==1.0.0
 Flask-Login==0.6.2
 Werkzeug==2.3.7
 tweepy==4.14.0
-instagrapi==1.16.3 
+instagrapi==1.16.3
+gunicorn==21.2.0 
