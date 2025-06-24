@@ -4,9 +4,11 @@ import json
 from datetime import datetime
 
 class MediumAPI:
-    def __init__(self, access_token=None):
-        self.access_token = access_token or os.getenv('MEDIUM_ACCESS_TOKEN')
-        self.base_url = 'https://api.medium.com/v1' # Placeholder API URL
+    def __init__(self, access_token):
+        if not access_token:
+            raise ValueError("Medium access token is required.")
+        self.access_token = access_token
+        self.base_url = 'https://api.medium.com/v1'
         self.headers = {
             'Authorization': f'Bearer {self.access_token}',
             'Content-Type': 'application/json',
@@ -15,37 +17,28 @@ class MediumAPI:
         }
 
     def post_story(self, title, content, tags=None, publish_status='public'):
-        """
-        Publishes a new story to Medium.
-        Requires Medium Integration Token.
-        """
+        """Publishes a new story to Medium."""
         if not title or not content:
-            print("Error: Both title and content are required for posting a story to Medium.")
-            return None
+            raise ValueError("Title and content are required for a Medium story.")
 
-        try:
-            # Fetch authenticated user ID to create a post under their account
-            user_info_endpoint = f'{self.base_url}/me'
-            user_info_response = requests.get(user_info_endpoint, headers=self.headers)
-            user_info_response.raise_for_status()
-            author_id = user_info_response.json()['data']['id']
+        # 1. Fetch authenticated user ID
+        user_info_response = requests.get(f'{self.base_url}/me', headers=self.headers)
+        user_info_response.raise_for_status()
+        author_id = user_info_response.json()['data']['id']
 
-            endpoint = f'{self.base_url}/users/{author_id}/posts'
-            payload = {
-                'title': title,
-                'contentFormat': 'html', # Or 'markdown'
-                'content': content, # Assuming content is already in desired format
-                'tags': tags or [],
-                'publishStatus': publish_status # e.g., 'public', 'draft', 'unlisted'
-            }
-            
-            response = requests.post(endpoint, headers=self.headers, json=payload)
-            response.raise_for_status()
-            print(f"[MediumAPI] Story posted successfully: {response.json()}")
-            return response.json()
-        except Exception as e:
-            print(f"Error posting to Medium: {str(e)}")
-            return None
+        # 2. Post the story
+        endpoint = f'{self.base_url}/users/{author_id}/posts'
+        payload = {
+            'title': title,
+            'contentFormat': 'html',
+            'content': content,
+            'tags': tags or [],
+            'publishStatus': publish_status,
+        }
+        
+        response = requests.post(endpoint, headers=self.headers, json=payload)
+        response.raise_for_status()
+        return response.json()
 
     def schedule_story(self, title, content, scheduled_time, tags=None):
         """
@@ -58,4 +51,48 @@ class MediumAPI:
         print("\n--- Note: Medium API does not natively support scheduling. --- ")
         print("This function will post the story as a 'draft' and rely on the external scheduler.")
         # Post as draft, then the scheduler would need to update its status at scheduled_time
-        return self.post_story(title, content, tags=tags, publish_status='draft') 
+        return self.post_story(title, content, tags=tags, publish_status='draft')
+
+def post_to_medium(account, content, base_dir):
+    """
+    Main function to post content to Medium.
+    Constructs an HTML post from the content dictionary.
+    """
+    account_id = account['id']
+    access_token = os.getenv(f'MEDIUM_AUTH_TOKEN_{account_id}')
+
+    try:
+        api = MediumAPI(access_token)
+        
+        title = content.get('title', 'No Title')
+        description = content.get('description', '')
+        hashtags = content.get('hashtags', '')
+        media_path_relative = content.get('media_path')
+
+        # Construct HTML content for the post
+        # Medium doesn't upload media directly via this API endpoint,
+        # but you can embed images using <img> tags if they are hosted elsewhere.
+        # Here, we'll just create a text-based post.
+        html_content = f"<h1>{title}</h1>\n<p>{description.replace('\n', '<br>')}</p>"
+
+        # Prepend '#' to each tag for display
+        if hashtags:
+            formatted_tags = [f"#{tag.strip()}" for tag in hashtags.split(',') if tag.strip()]
+            html_content += f"<p><em>{' '.join(formatted_tags)}</em></p>"
+        
+        # Medium API tags are passed as a list of strings
+        tag_list = [tag.strip() for tag in hashtags.split(',') if tag.strip()]
+
+        response = api.post_story(
+            title=title,
+            content=html_content,
+            tags=tag_list[:5],  # Medium allows a maximum of 5 tags
+            publish_status='public'
+        )
+            
+        print(f"[Medium API] Post successful: {response}")
+        return response
+
+    except Exception as e:
+        print(f"Error posting to Medium for account {account_id}: {e}")
+        raise Exception(f"Medium API Error: {e}") 

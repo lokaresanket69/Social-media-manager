@@ -1,104 +1,76 @@
 import os
 import requests
-import json
+import mimetypes
 from datetime import datetime
 
 class PinterestAPI:
-    def __init__(self, access_token=None):
-        self.access_token = access_token or os.getenv('PINTEREST_ACCESS_TOKEN')
-        self.base_url = 'https://api.pinterest.com/v5' # Pinterest API base URL
+    def __init__(self, access_token):
+        if not access_token:
+            raise ValueError("Pinterest access token is required.")
+        self.access_token = access_token
+        self.base_url = 'https://api.pinterest.com/v5'
         self.headers = {
             'Authorization': f'Bearer {self.access_token}',
             'Content-Type': 'application/json'
         }
 
     def post_pin(self, board_id, title, description, image_path):
-        """
-        Posts a new pin to Pinterest.
-        Requires an image file and a board_id.
-        """
+        """Posts a new pin to a specified Pinterest board."""
         if not board_id:
-            print("Error: Board ID is required for Pinterest pins.")
-            return None
+            raise ValueError("Board ID is required to post a pin.")
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Image path does not exist: {image_path}")
 
-        if not image_path or not os.path.exists(image_path):
-            print(f"Error: Valid image path is required for Pinterest pins. Path provided: {image_path}")
-            return None
+        # 1. Upload the image to get a media ID
+        media_id = self._upload_image(image_path)
+        if not media_id:
+            raise Exception("Failed to upload image to Pinterest.")
 
-        try:
-            # Step 1: Upload the image to Pinterest and get a media ID
-            print(f"[PinterestAPI] Attempting to upload image: {image_path}")
-            media_id = self._upload_image(image_path)
-
-            if not media_id:
-                print(f"[PinterestAPI] Failed to upload image {image_path}. Cannot create pin.")
-                return None
-
-            # Step 2: Create the Pin using the uploaded media ID
-            print(f"[PinterestAPI] Creating pin with media ID: {media_id}")
-            pin_data = self._create_pin(board_id, title, description, media_id)
-
-            if pin_data:
-                print(f"[PinterestAPI] Pin posted successfully: {pin_data}")
-                return pin_data
-            else:
-                print(f"[PinterestAPI] Failed to create pin for image {image_path}.")
-                return None
-        except Exception as e:
-            print(f"Error posting to Pinterest: {str(e)}")
-            return None
+        # 2. Create the Pin using the uploaded media ID
+        return self._create_pin(board_id, title, description, media_id)
 
     def _upload_image(self, image_path):
-        """
-        Uploads an image to Pinterest and returns the media ID.
-        """
-        try:
-            # Step 1: Register the image upload
-            register_endpoint = f'{self.base_url}/media'
-            register_payload = {
-                'media_type': 'image'
-            }
-            register_response = requests.post(register_endpoint, headers=self.headers, json=register_payload)
-            register_response.raise_for_status()
-            upload_url = register_response.json()['image_upload_url']
-            media_id = register_response.json()['media_id']
+        """Uploads an image to Pinterest and returns the media ID."""
+        endpoint = f'{self.base_url}/media'
+        payload = {'media_type': 'image'}
+        
+        # Register the upload
+        register_response = requests.post(endpoint, headers=self.headers, json=payload)
+        register_response.raise_for_status()
+        
+        upload_data = register_response.json()
+        upload_url = upload_data['upload_url']
+        media_id = upload_data['media_id']
 
-            # Step 2: Upload the image file
-            with open(image_path, 'rb') as img_file:
-                upload_headers = {'Content-Type': 'image/jpeg'} # Assuming JPEG, but should be dynamic based on file type
-                upload_response = requests.put(upload_url, headers=upload_headers, data=img_file)
-                upload_response.raise_for_status()
-            
-            return media_id
-        except Exception as e:
-            print(f"Error uploading image to Pinterest: {str(e)}")
-            return None
+        # Upload the actual image file
+        content_type = mimetypes.guess_type(image_path)[0] or 'image/jpeg'
+        upload_headers = {'Content-Type': content_type}
+        
+        with open(image_path, 'rb') as img_file:
+            upload_response = requests.put(upload_url, headers=upload_headers, data=img_file)
+            upload_response.raise_for_status()
+        
+        # Optionally, you might need to check the status of the media upload here
+        # For simplicity, we assume it's ready.
+        
+        return media_id
 
     def _create_pin(self, board_id, title, description, media_id):
-        """
-        Creates a pin on Pinterest using a pre-uploaded media ID.
-        """
-        try:
-            endpoint = f'{self.base_url}/pins'
-            payload = {
-                'board_id': board_id,
-                'title': title,
-                'description': description,
-                'media_source': {
-                    'source_type': 'image_url', 
-                    'url': f'{self.base_url}/media/{media_id}' # Use media ID to construct the URL
-                }
+        """Creates a pin on Pinterest using a media ID."""
+        endpoint = f'{self.base_url}/pins'
+        payload = {
+            'board_id': board_id,
+            'title': title,
+            'description': description,
+            'media_source': {
+                'source_type': 'media_id',
+                'media_id': media_id
             }
-            # NOTE: Pinterest API v5 documentation suggests using 'media_id' in a specific structure
-            # This example uses 'image_url' with a constructed URL. For proper 'media_id' usage,
-            # refer to Pinterest's latest API docs as this can be subject to change.
-
-            response = requests.post(endpoint, headers=self.headers, json=payload)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            print(f"Error creating pin on Pinterest: {str(e)}")
-            return None
+        }
+        
+        response = requests.post(endpoint, headers=self.headers, json=payload)
+        response.raise_for_status()
+        return response.json()
 
     def schedule_pin(self, board_id, title, description, image_path, scheduled_time):
         """
@@ -111,4 +83,44 @@ class PinterestAPI:
         print("This function relies on the external scheduler to trigger the post_pin at the scheduled time.")
         # Simply return a success message or handle as a pending action
         # The actual scheduling logic is in scheduler.py
-        return {'status': 'scheduled_via_external_scheduler', 'scheduled_time': scheduled_time.isoformat()} 
+        return {'status': 'scheduled_via_external_scheduler', 'scheduled_time': scheduled_time.isoformat()}
+
+def post_to_pinterest(account, content, base_dir):
+    """
+    Main function to post a pin to Pinterest.
+    """
+    account_id = account['id']
+    access_token = os.getenv(f'PINTEREST_ACCESS_TOKEN_{account_id}')
+    
+    # Pinterest requires a Board ID to post a pin. This should be configured per account.
+    # We will fetch it from an environment variable for now.
+    board_id = os.getenv(f'PINTEREST_BOARD_ID_{account_id}')
+
+    if not board_id:
+        raise ValueError(f"Pinterest Board ID is not configured for account {account_id}.")
+
+    try:
+        api = PinterestAPI(access_token)
+        
+        title = content.get('title', 'No Title')
+        description = f"{content.get('description', '')}\n\n{content.get('hashtags', '')}".strip()
+        media_path_relative = content.get('media_path')
+
+        if not media_path_relative:
+            raise ValueError("An image is required to post a pin to Pinterest.")
+
+        media_path_absolute = os.path.join(base_dir, media_path_relative)
+        
+        response = api.post_pin(
+            board_id=board_id,
+            title=title,
+            description=description,
+            image_path=media_path_absolute
+        )
+            
+        print(f"[Pinterest API] Pin created successfully: {response}")
+        return response
+
+    except Exception as e:
+        print(f"Error posting to Pinterest for account {account_id}: {e}")
+        raise Exception(f"Pinterest API Error: {e}") 

@@ -2,34 +2,35 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, f
 from flask_cors import CORS
 import sqlite3
 import os
+from dotenv import load_dotenv
 from datetime import datetime, timezone
 import json
 from dateutil.parser import isoparse
 from dateutil.tz import tzlocal
-
 from apscheduler.schedulers.background import BackgroundScheduler
+
+# --- Local API Modules ---
 from scheduler import process_scheduled_posts
 from youtube_api import post_to_youtube
 from instagram_api import post_to_instagram
 from twitter_api import post_to_twitter
-from pinterest_api import PinterestAPI
-from medium_api import MediumAPI
-from quora_api import QuoraAPI
-from linkedin_api import LinkedInAPI
+from pinterest_api import post_to_pinterest
+from medium_api import post_to_medium
+from linkedin_api import post_to_linkedin
 
-from google_auth_oauthlib.flow import Flow
-from google.oauth2.credentials import Credentials
-import google.auth.transport.requests
+# Load environment variables from .env file
+# Create a .env file in this directory and add your credentials.
+# See .env.example for a template.
+load_dotenv()
 
-SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
-
+# --- App Setup ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, 'templates'), static_folder=os.path.join(BASE_DIR, 'static'))
-app.secret_key = os.urandom(24)  # For session management
+app.secret_key = os.getenv('SECRET_KEY', os.urandom(24))
 CORS(app)
-DB_PATH = 'social_media_automation.db'
+DB_PATH = os.path.join(BASE_DIR, 'social_media_automation.db')
 
-# --- Database Setup ---
+# --- Database Functions ---
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -38,47 +39,24 @@ def get_db():
 def init_db():
     conn = get_db()
     c = conn.cursor()
-    
-    # Existing tables
     c.execute('''CREATE TABLE IF NOT EXISTS platforms (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
-        display_name TEXT NOT NULL
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, display_name TEXT NOT NULL
     )''')
-    
     c.execute('''CREATE TABLE IF NOT EXISTS accounts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        platform_id INTEGER NOT NULL,
-        name TEXT NOT NULL,
-        credential_path TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(platform_id) REFERENCES platforms(id)
+        id INTEGER PRIMARY KEY AUTOINCREMENT, platform_id INTEGER NOT NULL, name TEXT NOT NULL,
+        created_at TEXT NOT NULL, FOREIGN KEY(platform_id) REFERENCES platforms(id)
     )''')
-    
     c.execute('''CREATE TABLE IF NOT EXISTS content (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        account_id INTEGER NOT NULL,
-        title TEXT NOT NULL,
-        description TEXT,
-        hashtags TEXT,
-        media_path TEXT NOT NULL,
-        schedule_time TEXT,
-        status TEXT DEFAULT 'pending',
-        error TEXT,
-        created_at TEXT NOT NULL,
+        id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER NOT NULL, title TEXT NOT NULL,
+        description TEXT, hashtags TEXT, media_path TEXT NOT NULL, schedule_time TEXT,
+        status TEXT DEFAULT 'pending', error TEXT, created_at TEXT NOT NULL,
         FOREIGN KEY(account_id) REFERENCES accounts(id)
     )''')
-    
-    # Insert default platforms
-    c.executemany('INSERT OR IGNORE INTO platforms (name, display_name) VALUES (?, ?)', [
-        ('youtube', 'YouTube'),
-        ('instagram', 'Instagram'),
-        ('twitter', 'Twitter'),
-        ('pinterest', 'Pinterest'),
-        ('medium', 'Medium'),
-        ('quora', 'Quora'),
-        ('linkedin', 'LinkedIn')
-    ])
+    platforms = [
+        ('youtube', 'YouTube'), ('instagram', 'Instagram'), ('twitter', 'Twitter'),
+        ('pinterest', 'Pinterest'), ('medium', 'Medium'), ('linkedin', 'LinkedIn')
+    ]
+    c.executemany('INSERT OR IGNORE INTO platforms (name, display_name) VALUES (?, ?)', platforms)
     conn.commit()
     conn.close()
 
@@ -88,95 +66,44 @@ init_db()
 @app.route('/api/platforms')
 def api_platforms():
     conn = get_db()
-    rows = conn.execute('SELECT * FROM platforms').fetchall()
+    platforms = conn.execute('SELECT * FROM platforms').fetchall()
     conn.close()
-    return jsonify([dict(row) for row in rows])
+    return jsonify([dict(row) for row in platforms])
 
 @app.route('/api/accounts', methods=['GET', 'POST'])
 def api_accounts():
     conn = get_db()
     if request.method == 'POST':
+        # Account creation is simplified. Credentials are now managed
+        # via environment variables based on the account's database ID.
         data = request.form
         platform_id = data.get('platform_id')
         name = data.get('account_name')
-        created_at = datetime.utcnow().isoformat()
+        
+        if not all([platform_id, name]):
+            return jsonify({'error': 'Platform and Account Name are required.'}), 400
 
-        c = conn.cursor()
-
-        # Check if platform is YouTube (assuming platform_id 1 is YouTube based on init_db)
-        # A better way would be to query the platforms table
-        platform = conn.execute('SELECT name FROM platforms WHERE id=?', (platform_id,)).fetchone()
-        platform_name = platform['name'] if platform else None
-
-        if platform_name == 'youtube':
-            if 'credential' not in request.files:
-                return jsonify({'error': 'No credential file provided for YouTube'}), 400
-            file = request.files['credential']
-            if not file.filename.endswith('.json'):
-                 return jsonify({'error': 'YouTube credential must be a .json file'}), 400
-
-            # Save the client_secret.json temporarily
-            uploads_dir = os.path.join(BASE_DIR, 'uploads')
-            if not os.path.exists(uploads_dir):
-                os.makedirs(uploads_dir)
-            # Use a unique name for the client_secret file, maybe linked to account name or a temporary ID
-            # For simplicity, let's save it with a recognizable name for now.
-            # In a real app, you might want a more robust temporary storage or naming.
-            client_secret_filename = f'youtube_client_secret_{name.replace(" ", "_")}.json'
-            cred_path_relative = os.path.join('uploads', client_secret_filename)
-            cred_path_absolute = os.path.join(BASE_DIR, cred_path_relative)
-            file.save(cred_path_absolute)
-
-            # Insert a temporary account entry to get an account ID
-            # We will update the credential_path after the OAuth flow
-            c.execute('''INSERT INTO accounts (platform_id, name, credential_path, created_at)
-                         VALUES (?, ?, ?, ?)''',
-                      (platform_id, name, '_temp_' + cred_path_relative, created_at)) # Use a temp path for now
-            account_id = c.lastrowid
+        try:
+            c = conn.cursor()
+            c.execute('INSERT INTO accounts (platform_id, name, created_at) VALUES (?, ?, ?)',
+                      (platform_id, name, datetime.utcnow().isoformat()))
             conn.commit()
-            conn.close()
-
-            # Redirect to initiate the OAuth flow
-            # Pass the temporary client secret path and account_id to the authorize route
-            return redirect(url_for('authorize_youtube', account_id=account_id, client_secret_path=cred_path_relative))
-
-        else:
-            # Handle other platforms (Instagram, Twitter) as before
-            cred_path = ''
-            if 'credential' in request.files:
-                file = request.files['credential']
-                cred_path = os.path.join('uploads', f"{file.filename}")
-                file.save(os.path.join(BASE_DIR, cred_path))
-            elif data.get('credential_token'):
-                # Generate a unique filename for token files
-                token_filename = f'token_{datetime.utcnow().timestamp()}.txt'
-                cred_path = os.path.join('uploads', token_filename)
-                token_path_absolute = os.path.join(BASE_DIR, cred_path)
-                # Ensure uploads directory exists before writing
-                uploads_dir = os.path.join(BASE_DIR, 'uploads')
-                if not os.path.exists(uploads_dir):
-                    os.makedirs(uploads_dir)
-                with open(token_path_absolute, 'w') as f:
-                    f.write(data['credential_token'])
-            else:
-                conn.close()
-                return jsonify({'error': 'No credential provided'}), 400
-
-            c.execute('''INSERT INTO accounts (platform_id, name, credential_path, created_at)
-                         VALUES (?, ?, ?, ?)''',
-                      (platform_id, name, cred_path, created_at))
-            conn.commit()
-            conn.close()
+            flash(f"Account '{name}' created. Ensure you have set its credentials in the .env file.", "success")
             return jsonify({'success': True})
-    else:
+        except Exception as e:
+            return jsonify({'error': f'Failed to create account: {e}'}), 500
+        finally:
+            conn.close()
+    else: # GET
         platform_id = request.args.get('platform_id')
+        query = 'SELECT * FROM accounts'
+        params = []
         if platform_id:
-            rows = conn.execute('SELECT * FROM accounts WHERE platform_id=?', 
-                              (platform_id,)).fetchall()
-        else:
-            rows = conn.execute('SELECT * FROM accounts').fetchall()
+            query += ' WHERE platform_id=?'
+            params.append(platform_id)
+        accounts = conn.execute(query, params).fetchall()
         conn.close()
-        return jsonify([dict(row) for row in rows])
+        return jsonify([dict(row) for row in accounts])
 
 @app.route('/api/content', methods=['GET', 'POST'])
 def api_content():
@@ -491,10 +418,21 @@ def delete_content(content_id):
         return jsonify({'error': f'Failed to delete content: {str(e)}'}), 500
 
 # --- Scheduler Setup ---
-scheduler = BackgroundScheduler()
+platform_apis = {
+    'youtube': post_to_youtube,
+    'instagram': post_to_instagram,
+    'twitter': post_to_twitter,
+    'pinterest': post_to_pinterest,
+    'medium': post_to_medium,
+    'linkedin': post_to_linkedin,
+}
+
+scheduler = BackgroundScheduler(timezone=timezone.utc)
 scheduler.add_job(
-    lambda: process_scheduled_posts(get_db, post_to_youtube, post_to_instagram, post_to_twitter, PinterestAPI, MediumAPI, QuoraAPI, LinkedInAPI, BASE_DIR),
-    'interval', minutes=1
+    func=process_scheduled_posts,
+    trigger='interval',
+    minutes=1,
+    args=[get_db, platform_apis, BASE_DIR]
 )
 scheduler.start()
 

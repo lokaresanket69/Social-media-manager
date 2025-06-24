@@ -4,4 +4,6 @@ Flask-SQLAlchemy==3.0.3
 APScheduler==3.10.4
 python-dotenv==1.0.0
 Flask-Login==0.6.2
-Werkzeug==2.3.7 
+Werkzeug==2.3.7
+tweepy==4.14.0
+instagrapi==1.16.3 
