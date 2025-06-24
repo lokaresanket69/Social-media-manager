@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Social Media Automation{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1 class="h3">Welcome to the Dashboard!</h1>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Connected Accounts</h5>
+                <p class="card-text display-4">{{ accounts|length }}</p>
+                <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal">
+                    <i class="fas fa-plus me-1"></i>Add Account
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Scheduled Posts</h5>
+                <p class="card-text display-4">{{ content_items|selectattr('schedule_time', 'defined')|list|length }}</p>
+                <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#schedulePostModal">
+                    <i class="fas fa-calendar-plus me-1"></i>Schedule Post
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Platforms</h5>
+                <div class="d-flex justify-content-around">
+                    {% for platform in platforms %}
+                        <a href="{{ url_for('platform_page', platform_name=platform.name) }}" class="text-decoration-none">
+                            <i class="fas fa-{{ platform.name }}-icon platform-icon {{ platform.name }}-icon"></i>
+                        </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Recent Posts</h5>
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Platform</th>
+                                <th>Status</th>
+                                <th>Scheduled For</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for content in content_items[:5] %}
+                            <tr>
+                                <td>{{ content.title }}</td>
+                                <td>
+                                    {% for account in accounts %}
+                                        {% if account.id == content.account_id %}
+                                            {{ account.name }}
+                                        {% endif %}
+                                    {% endfor %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-{{ 'success' if content.status == 'posted' else ('danger' if content.status == 'error' else 'warning') }}">
+                                        {{ content.status }}
+                                    </span>
+                                    {% if content.status == 'error' and content.error %}
+                                        <small class="text-danger d-block">Error: {{ content.error }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>{{ content.schedule_time or 'Not scheduled' }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <form action="{{ url_for('delete_content', content_id=content.id) }}" method="POST" class="delete-form" data-item-type="content" style="display:inline;">
+                                         <input type="hidden" name="_method" value="DELETE">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Account Modal -->
+<div class="modal fade" id="addAccountModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Social Media Account</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addAccountForm" method="POST" action="{{ url_for('api_accounts') }}" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="platform" class="form-label">Platform</label>
+                        <select class="form-select" id="platform" name="platform_id" required>
+                            <option value="">Select a platform</option>
+                            {% for platform in platforms %}
+                                <option value="{{ platform.id }}">{{ platform.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="accountName" class="form-label">Account Name</label>
+                        <input type="text" class="form-control" id="accountName" name="account_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="credential" class="form-label">Credentials</label>
+                        <input type="file" class="form-control" id="credential" name="credential">
+                        <div class="form-text">Upload your API credentials file or enter token below</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="credentialToken" class="form-label">Or Enter Token</label>
+                        <textarea class="form-control" id="credentialToken" name="credential_token" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary" form="addAccountForm">Add Account</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Schedule Post Modal -->
+<div class="modal fade" id="schedulePostModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Schedule New Post</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="schedulePostForm">
+                    <div class="mb-3">
+                        <label for="postAccount" class="form-label">Account</label>
+                        <select class="form-select" id="postAccount" name="account_id" required>
+                            <option value="">Select an account</option>
+                            {% for account in accounts %}
+                                <option value="{{ account.id }}">{{ account.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="postTitle" class="form-label">Title</label>
+                        <input type="text" class="form-control" id="postTitle" name="title" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="postDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="postDescription" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="postHashtags" class="form-label">Hashtags</label>
+                        <input type="text" class="form-control" id="postHashtags" name="hashtags" placeholder="#hashtag1 #hashtag2">
+                    </div>
+                    <div class="mb-3">
+                        <label for="postMedia" class="form-label">Media</label>
+                        <input type="file" class="form-control" id="postMedia" name="media" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="postSchedule" class="form-label">Schedule Time</label>
+                        <input type="datetime-local" class="form-control" id="postSchedule" name="schedule_time">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary" form="schedulePostForm">Schedule Post</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% endblock %} 

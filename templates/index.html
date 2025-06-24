@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}Social Media Automation Platform{% endblock %}
+
+{% block content %}
+<div class="row align-items-center min-vh-75">
+    <div class="col-md-6">
+        <h1 class="display-4 mb-4">Manage Your Social Media Presence</h1>
+        <p class="lead mb-4">
+            Automate your social media posts across multiple platforms. Schedule content, manage accounts, and track performance - all in one place.
+        </p>
+        <div class="d-grid gap-2 d-md-flex">
+            <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg">
+                <i class="fas fa-tachometer-alt me-2"></i>Go to Dashboard
+            </a>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="row g-4">
+            <div class="col-6">
+                <a href="{{ url_for('platform_page', platform_name='youtube') }}" class="card h-100 text-decoration-none">
+                    <div class="card-body text-center">
+                        <i class="fab fa-youtube platform-icon youtube-icon"></i>
+                        <h5 class="card-title">YouTube</h5>
+                        <p class="card-text">Upload and schedule videos</p>
+                    </div>
+                </a>
+            </div>
+            <div class="col-6">
+                <a href="{{ url_for('platform_page', platform_name='instagram') }}" class="card h-100 text-decoration-none">
+                    <div class="card-body text-center">
+                        <i class="fab fa-instagram platform-icon instagram-icon"></i>
+                        <h5 class="card-title">Instagram</h5>
+                        <p class="card-text">Post photos and stories</p>
+                    </div>
+                </a>
+            </div>
+            <div class="col-6">
+                <a href="{{ url_for('platform_page', platform_name='twitter') }}" class="card h-100 text-decoration-none">
+                    <div class="card-body text-center">
+                        <i class="fab fa-twitter platform-icon twitter-icon"></i>
+                        <h5 class="card-title">Twitter</h5>
+                        <p class="card-text">Share tweets and media</p>
+                    </div>
+                </a>
+            </div>
+            <div class="col-6">
+                <a href="{{ url_for('platform_page', platform_name='pinterest') }}" class="card h-100 text-decoration-none">
+                    <div class="card-body text-center">
+                        <i class="fab fa-pinterest platform-icon pinterest-icon"></i>
+                        <h5 class="card-title">Pinterest</h5>
+                        <p class="card-text">Create and share visual content</p>
+                    </div>
+                </a>
+            </div>
+            <div class="col-6">
+                <a href="{{ url_for('platform_page', platform_name='medium') }}" class="card h-100 text-decoration-none">
+                    <div class="card-body text-center">
+                        <i class="fab fa-medium platform-icon medium-icon"></i>
+                        <h5 class="card-title">Medium</h5>
+                        <p class="card-text">Publish articles and stories</p>
+                    </div>
+                </a>
+            </div>
+            <div class="col-6">
+                <a href="{{ url_for('platform_page', platform_name='quora') }}" class="card h-100 text-decoration-none">
+                    <div class="card-body text-center">
+                        <i class="fab fa-quora platform-icon quora-icon"></i>
+                        <h5 class="card-title">Quora</h5>
+                        <p class="card-text">Ask and answer questions</p>
+                    </div>
+                </a>
+            </div>
+            <div class="col-6">
+                <a href="{{ url_for('platform_page', platform_name='linkedin') }}" class="card h-100 text-decoration-none">
+                    <div class="card-body text-center">
+                        <i class="fab fa-linkedin-in platform-icon linkedin-icon"></i>
+                        <h5 class="card-title">LinkedIn</h5>
+                        <p class="card-text">Share professional updates</p>
+                    </div>
+                </a>
+            </div>
+            <div class="col-6">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-chart-line text-primary platform-icon"></i>
+                        <h5 class="card-title">Analytics</h5>
+                        <p class="card-text">Track your performance</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-5">
+    <div class="col-12">
+        <h2 class="text-center mb-4">Features</h2>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-clock text-primary me-2"></i>
+                    Schedule Posts
+                </h5>
+                <p class="card-text">
+                    Plan your content calendar and schedule posts for optimal engagement times.
+                </p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-share-alt text-primary me-2"></i>
+                    Cross-Platform
+                </h5>
+                <p class="card-text">
+                    Manage multiple social media accounts from a single dashboard.
+                </p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-chart-bar text-primary me-2"></i>
+                    Analytics
+                </h5>
+                <p class="card-text">
+                    Track engagement and performance metrics across all your platforms.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+
+{% block title %}{{ platform.display_name }} - Social Media Automation{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1 class="h3">
+            <i class="fas fa-{{ platform.name }}-icon {{ platform.name }}-icon me-2"></i>
+            {{ platform.display_name }}
+        </h1>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Connected Accounts</h5>
+                <p class="card-text display-4">{{ accounts|length }}</p>
+                <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal">
+                    <i class="fas fa-plus me-1"></i>Add Account
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Account List</h5>
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Account Name</th>
+                                <th>Connected Since</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for account in accounts %}
+                            <tr>
+                                <td>{{ account.name }}</td>
+                                <td>{{ account.created_at }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <form action="{{ url_for('delete_account', account_id=account.id) }}" method="POST" class="delete-form" data-item-type="account" style="display:inline;">
+                                        <input type="hidden" name="_method" value="DELETE">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="card-title mb-0">Content</h5>
+                    <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#schedulePostModal">
+                        <i class="fas fa-plus me-1"></i>New Post
+                    </a>
+                </div>
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Account</th>
+                                <th>Status</th>
+                                <th>Scheduled For</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for content in content_items %}
+                            <tr>
+                                <td>{{ content.title }}</td>
+                                <td>
+                                    {% for account in accounts %}
+                                        {% if account.id == content.account_id %}
+                                            {{ account.name }}
+                                        {% endif %}
+                                    {% endfor %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-{{ 'success' if content.status == 'posted' else ('danger' if content.status == 'error' else 'warning') }}">
+                                        {{ content.status }}
+                                    </span>
+                                    {% if content.status == 'error' and content.error %}
+                                        <small class="text-danger d-block">Error: {{ content.error }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>{{ content.schedule_time or 'Not scheduled' }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <form action="{{ url_for('delete_content', content_id=content.id) }}" method="POST" class="delete-form" data-item-type="content" style="display:inline;">
+                                        <input type="hidden" name="_method" value="DELETE">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Account Modal -->
+<div class="modal fade" id="addAccountModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add {{ platform.display_name }} Account</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addAccountForm" method="POST" action="{{ url_for('api_accounts') }}" enctype="multipart/form-data">
+                    <input type="hidden" name="platform_id" value="{{ platform.id }}">
+                    <div class="mb-3">
+                        <label for="accountName" class="form-label">Account Name</label>
+                        <input type="text" class="form-control" id="accountName" name="account_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="credential" class="form-label">Credentials</label>
+                        <input type="file" class="form-control" id="credential" name="credential">
+                        <div class="form-text">Upload your API credentials file or enter token below</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="credentialToken" class="form-label">Or Enter Token</label>
+                        <textarea class="form-control" id="credentialToken" name="credential_token" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary" form="addAccountForm">Add Account</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Schedule Post Modal -->
+<div class="modal fade" id="schedulePostModal" tabindex="-1" data-platform-name="{{ platform.name }}">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Schedule New Post</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="schedulePostForm" method="POST" action="{{ url_for('api_content') }}" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="postAccount" class="form-label">Account</label>
+                        <select class="form-select" id="postAccount" name="account_id" required>
+                            <option value="">Select an account</option>
+                            {% for account in accounts %}
+                                <option value="{{ account.id }}">{{ account.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="postTitle" class="form-label">Title</label>
+                        <input type="text" class="form-control" id="postTitle" name="title" required>
+                    </div>
+                    <div class="mb-3" id="descriptionGroup">
+                        <label for="postDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="postDescription" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3" id="hashtagsGroup">
+                        <label for="postHashtags" class="form-label">Hashtags</label>
+                        <input type="text" class="form-control" id="postHashtags" name="hashtags" placeholder="#hashtag1 #hashtag2">
+                    </div>
+                    <div class="mb-3" id="mediaGroup">
+                        <label for="postMedia" class="form-label">Media</label>
+                        <input type="file" class="form-control" id="postMedia" name="media">
+                    </div>
+                    <div class="mb-3">
+                        <label for="postSchedule" class="form-label">Schedule Time</label>
+                        <input type="datetime-local" class="form-control" id="postSchedule" name="schedule_time">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Schedule Post</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var schedulePostModal = document.getElementById('schedulePostModal');
+        var postTitle = document.getElementById('postTitle');
+        var descriptionGroup = document.getElementById('descriptionGroup');
+        var postDescription = document.getElementById('postDescription');
+        var hashtagsGroup = document.getElementById('hashtagsGroup');
+        var mediaGroup = document.getElementById('mediaGroup');
+        var postMedia = document.getElementById('postMedia');
+
+        schedulePostModal.addEventListener('show.bs.modal', function () {
+            var platformName = schedulePostModal.dataset.platformName;
+
+            // Reset fields to default state before applying platform-specific logic
+            descriptionGroup.style.display = 'block';
+            postDescription.setAttribute('required', 'false'); // Default to not required by HTML, can be handled by JS later
+            postDescription.placeholder = ''; // Clear placeholder
+            postDescription.setAttribute('rows', '3');
+            hashtagsGroup.style.display = 'block';
+            mediaGroup.style.display = 'block';
+            postMedia.removeAttribute('required'); // Remove required from media by default
+            postMedia.value = ''; // Clear any selected file
+            postTitle.setAttribute('required', 'true'); // Title is generally always required
+
+            // Platform-specific adjustments
+            if (platformName === 'quora' || platformName === 'medium') {
+                mediaGroup.style.display = 'none'; // Hide media upload for text-only platforms
+                postMedia.removeAttribute('required'); // Ensure it's not required
+
+                // For Quora and Medium, description is the main content
+                postDescription.setAttribute('required', 'true');
+                postDescription.setAttribute('rows', '6'); // Give more space for content
+
+                if (platformName === 'quora') {
+                    postDescription.previousElementSibling.textContent = 'Answer/Content';
+                    postTitle.previousElementSibling.textContent = 'Question/Topic';
+                    hashtagsGroup.style.display = 'block'; // Quora uses topics, so hashtags group can be reused
+                } else if (platformName === 'medium') {
+                    postDescription.previousElementSibling.textContent = 'Article Content';
+                    postTitle.previousElementSibling.textContent = 'Article Title';
+                    hashtagsGroup.style.display = 'block'; // Medium uses tags
+                }
+            } else if (platformName === 'pinterest') {
+                mediaGroup.style.display = 'block'; // Show media upload
+                postMedia.setAttribute('required', 'true'); // Media is required for Pinterest
+                postDescription.setAttribute('required', 'false'); // Description is optional
+                postDescription.previousElementSibling.textContent = 'Description (Optional)';
+                postTitle.previousElementSibling.textContent = 'Pin Title';
+                hashtagsGroup.style.display = 'block';
+            } else if (platformName === 'youtube') {
+                mediaGroup.style.display = 'block';
+                postMedia.setAttribute('required', 'true');
+                postDescription.setAttribute('required', 'false'); // Description optional for YouTube
+                postDescription.previousElementSibling.textContent = 'Description (Optional)';
+                postTitle.previousElementSibling.textContent = 'Video Title';
+                hashtagsGroup.style.display = 'block';
+            } else if (platformName === 'instagram') {
+                mediaGroup.style.display = 'block';
+                postMedia.setAttribute('required', 'true');
+                postDescription.setAttribute('required', 'false');
+                postDescription.previousElementSibling.textContent = 'Caption (Optional)';
+                postTitle.style.display = 'none'; // Instagram generally doesn't have a separate title for posts
+                postTitle.removeAttribute('required');
+                hashtagsGroup.style.display = 'block';
+            } else if (platformName === 'twitter') {
+                mediaGroup.style.display = 'none'; // Twitter can have media, but for simplicity, we'll focus on text for now.
+                postMedia.removeAttribute('required');
+                postDescription.setAttribute('required', 'true'); // Tweet text is essential
+                postDescription.previousElementSibling.textContent = 'Tweet Content';
+                postDescription.setAttribute('rows', '4'); // More space for tweet
+                postTitle.style.display = 'none'; // Twitter doesn't have a separate title for tweets
+                postTitle.removeAttribute('required');
+                hashtagsGroup.style.display = 'block';
+            } else if (platformName === 'linkedin') {
+                mediaGroup.style.display = 'block'; // LinkedIn can have media, but not strictly required for text posts
+                postMedia.removeAttribute('required');
+                postDescription.setAttribute('required', 'true'); // Main content
+                postDescription.previousElementSibling.textContent = 'Post Content';
+                postDescription.setAttribute('rows', '6');
+                postTitle.style.display = 'none'; // LinkedIn generally doesn't have a separate title for posts
+                postTitle.removeAttribute('required');
+                hashtagsGroup.style.display = 'none'; // LinkedIn uses hashtags within content, not separate field
+            }
+        });
+
+        // Handle form submission to ensure correct required fields based on current platform state
+        var schedulePostForm = document.getElementById('schedulePostForm');
+        schedulePostForm.addEventListener('submit', function(event) {
+            var platformName = schedulePostModal.dataset.platformName;
+            var isMediaRequired = false;
+            var isDescriptionRequired = false;
+            var isTitleRequired = false;
+
+            if (platformName === 'pinterest' || platformName === 'youtube' || platformName === 'instagram' || platformName === 'linkedin') {
+                isMediaRequired = true;
+            }
+            if (platformName === 'quora' || platformName === 'medium' || platformName === 'twitter' || platformName === 'linkedin') {
+                isDescriptionRequired = true;
+            }
+            if (platformName === 'youtube' || platformName === 'pinterest' || platformName === 'quora' || platformName === 'medium') {
+                isTitleRequired = true;
+            }
+
+            // Manually check validity based on dynamic requirements
+            var isValid = true;
+
+            if (isTitleRequired && !postTitle.value.trim()) {
+                postTitle.classList.add('is-invalid');
+                isValid = false;
+            } else {
+                postTitle.classList.remove('is-invalid');
+            }
+
+            if (isDescriptionRequired && !postDescription.value.trim()) {
+                postDescription.classList.add('is-invalid');
+                isValid = false;
+            } else {
+                postDescription.classList.remove('is-invalid');
+            }
+
+            if (isMediaRequired && !postMedia.files.length) {
+                postMedia.classList.add('is-invalid');
+                isValid = false;
+            } else {
+                postMedia.classList.remove('is-invalid');
+            }
+
+            if (!isValid) {
+                event.preventDefault(); // Prevent form submission if validation fails
+                event.stopPropagation();
+            }
+        });
+    });
+</script>
+{% endblock %} 
