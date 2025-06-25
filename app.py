@@ -1,27 +1,24 @@
+from dotenv import load_dotenv
+load_dotenv()
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
 from flask_cors import CORS
 import sqlite3
 import os
-from dotenv import load_dotenv
 from datetime import datetime, timezone
 import json
 from dateutil.parser import isoparse
 from dateutil.tz import tzlocal
 from apscheduler.schedulers.background import BackgroundScheduler
+from security import encrypt_data, decrypt_data
 
 # --- Local API Modules ---
 from scheduler import process_scheduled_posts
 from youtube_api import post_to_youtube
-from instagram_api import post_to_instagram
+# from instagram_api import post_to_instagram
 from twitter_api import post_to_twitter
 from pinterest_api import post_to_pinterest
 from medium_api import post_to_medium
 from linkedin_api import post_to_linkedin
-
-# Load environment variables from .env file
-# Create a .env file in this directory and add your credentials.
-# See .env.example for a template.
-load_dotenv()
 
 # --- App Setup ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -44,7 +41,9 @@ def init_db():
     )''')
     c.execute('''CREATE TABLE IF NOT EXISTS accounts (
         id INTEGER PRIMARY KEY AUTOINCREMENT, platform_id INTEGER NOT NULL, name TEXT NOT NULL,
-        created_at TEXT NOT NULL, FOREIGN KEY(platform_id) REFERENCES platforms(id)
+        credentials TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(platform_id) REFERENCES platforms(id)
     )''')
     c.execute('''CREATE TABLE IF NOT EXISTS content (
         id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER NOT NULL, title TEXT NOT NULL,
@@ -74,29 +73,27 @@ def api_platforms():
 def api_accounts():
     conn = get_db()
     if request.method == 'POST':
-        # Account creation is simplified. Credentials are now managed
-        # via environment variables based on the account's database ID.
         data = request.form
         platform_id = data.get('platform_id')
         name = data.get('account_name')
-        
-        if not all([platform_id, name]):
-            return jsonify({'error': 'Platform and Account Name are required.'}), 400
-
+        credentials = {key: value for key, value in data.items() if key not in ['platform_id', 'account_name']}
+        if not all([platform_id, name, credentials]):
+            return jsonify({'error': 'Platform, Account Name, and Credentials are required.'}), 400
         try:
             c = conn.cursor()
-            c.execute('INSERT INTO accounts (platform_id, name, created_at) VALUES (?, ?, ?)',
-                      (platform_id, name, datetime.utcnow().isoformat()))
+            encrypted_credentials = encrypt_data(json.dumps(credentials))
+            c.execute('INSERT INTO accounts (platform_id, name, credentials, created_at) VALUES (?, ?, ?, ?)',
+                      (platform_id, name, encrypted_credentials, datetime.utcnow().isoformat()))
             conn.commit()
-            flash(f"Account '{name}' created. Ensure you have set its credentials in the .env file.", "success")
+            flash(f"Account '{name}' created successfully.", "success")
             return jsonify({'success': True})
         except Exception as e:
             return jsonify({'error': f'Failed to create account: {e}'}), 500
         finally:
             conn.close()
-    else: # GET
+    else:
         platform_id = request.args.get('platform_id')
-        query = 'SELECT * FROM accounts'
+        query = 'SELECT id, platform_id, name, created_at FROM accounts'
         params = []
         if platform_id:
             query += ' WHERE platform_id=?'
@@ -214,133 +211,9 @@ def platform_page(platform_name):
                          accounts=accounts,
                          content_items=content)
 
-@app.route('/authorize/youtube')
-def authorize_youtube():
-    client_secret_path_relative = request.args.get('client_secret_path')
-    account_id = request.args.get('account_id')
+# The old YouTube OAuth routes (authorize_youtube, oauth2callback_youtube) are no longer needed
+# as credentials are now added directly in the 'Add Account' form. They have been removed.
 
-    if not client_secret_path_relative or not account_id:
-        return jsonify({'error': 'Missing parameters for YouTube authorization'}), 400
-
-    client_secret_path_absolute = os.path.join(BASE_DIR, client_secret_path_relative)
-
-    if not os.path.exists(client_secret_path_absolute):
-        return jsonify({'error': 'Client secret file not found.' + client_secret_path_absolute}), 400
-
-    try:
-        # Create a Flow instance from the client secrets file
-        flow = Flow.from_client_secrets_file(
-            client_secret_path_absolute,
-            scopes=SCOPES,
-            # The callback URI must be registered in the Google Cloud Console
-            # We use url_for to generate the correct callback URL dynamically
-            redirect_uri=url_for('oauth2callback_youtube', _external=True, account_id=account_id)
-        )
-
-        # Generate the authorization URL and state
-        authorization_url, state = flow.authorization_url(
-            access_type='offline',  # Request a refresh token
-            include_granted_scopes='true')
-
-        # Store the state in the session to verify in the callback
-        # You need to set app.secret_key for session to work
-        # session['oauth_state'] = state
-        # For simplicity in this example, we are not using session state
-        # In a real application, you MUST use state to prevent CSRF attacks.
-
-        print(f'Redirecting for YouTube OAuth: {authorization_url}')
-
-        # Redirect the user to the authorization URL
-        return redirect(authorization_url)
-
-    except Exception as e:
-        print(f'Error initiating YouTube OAuth: {e}')
-        # Update the account status to reflect the error
-        conn = get_db()
-        conn.execute("UPDATE accounts SET created_at=?, name='OAuth Error', credential_path=?, platform_id=? WHERE id=?", (datetime.utcnow().isoformat(), str(e), 0, account_id))
-        conn.commit()
-        conn.close()
-        return jsonify({'error': f'Error initiating YouTube OAuth: {e}'}), 500
-
-@app.route('/oauth2callback/youtube')
-def oauth2callback_youtube():
-    # This is the callback route after the user authorizes the app on Google
-    account_id = request.args.get('account_id')
-    # state = request.args.get('state') # In a real app, verify state with session['oauth_state']
-
-    if not account_id:
-        return jsonify({'error': 'Missing account ID in callback'}), 400
-
-    conn = get_db()
-    account = conn.execute('SELECT * FROM accounts WHERE id=?', (account_id,)).fetchone()
-    if not account:
-        conn.close()
-        return jsonify({'error': 'Account not found'}), 404
-
-    # The temporary credential_path holds the path to the client_secret.json
-    client_secret_path_relative = account['credential_path'].replace('_temp_', '')
-    client_secret_path_absolute = os.path.join(BASE_DIR, client_secret_path_relative)
-
-    if not os.path.exists(client_secret_path_absolute):
-         conn.close()
-         return jsonify({'error': 'Temporary client secret file not found during callback.' + client_secret_path_absolute}), 400
-
-    try:
-        # Re-create the flow instance
-        flow = Flow.from_client_secrets_file(
-            client_secret_path_absolute,
-            scopes=[
-                'https://www.googleapis.com/auth/youtube',
-                'https://www.googleapis.com/auth/youtube.upload',
-                'https://www.googleapis.com/auth/youtube.force-ssl'
-            ],
-            redirect_uri=url_for('oauth2callback_youtube', _external=True, account_id=account_id)
-        )
-
-        # Exchange the authorization code for credentials (tokens)
-        authorization_response = request.url # Use the full request URL
-        os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-        flow.fetch_token(authorization_response=authorization_response)
-        del os.environ['OAUTHLIB_INSECURE_TRANSPORT']
-
-        creds = flow.credentials
-
-        # Save the credentials to a file
-        # Use a consistent naming convention, e.g., youtube_credentials_<account_id>.json
-        credentials_filename = f'youtube_credentials_{account_id}.json'
-        credentials_path_relative = os.path.join('uploads', credentials_filename)
-        credentials_path_absolute = os.path.join(BASE_DIR, credentials_path_relative)
-
-        with open(credentials_path_absolute, 'w') as token_file:
-            token_file.write(creds.to_json())
-
-        # Update the account entry in the database with the path to the saved credentials
-        conn.execute('UPDATE accounts SET credential_path=? WHERE id=?', (credentials_path_relative, account_id))
-        conn.commit()
-
-        # Optionally, delete the temporary client_secret.json file
-        try:
-            os.remove(client_secret_path_absolute)
-        except OSError as e:
-            print(f"Error deleting temporary client secret file {client_secret_path_absolute}: {e}")
-
-        conn.close()
-
-        # Redirect to a success page or the dashboard
-        flash('YouTube account linked successfully!', 'success')
-        return redirect(url_for('dashboard'))
-
-    except Exception as e:
-        print(f'Error handling YouTube OAuth callback: {e}')
-        # Update the account status to reflect the error
-        # Keep the temporary client_secret file for debugging if needed, or clean up.
-        conn.execute("UPDATE accounts SET created_at=?, name='OAuth Callback Error', credential_path=? WHERE id=?", (datetime.utcnow().isoformat(), str(e), account_id))
-        conn.commit()
-        conn.close()
-        flash(f'Error linking YouTube account: {e}', 'danger')
-        return redirect(url_for('dashboard')) # Redirect to dashboard even on error
-
-# --- Delete Routes ---
 @app.route('/delete/account/<int:account_id>', methods=['POST'])
 def delete_account(account_id):
     conn = get_db()
@@ -382,45 +255,15 @@ def delete_account(account_id):
 @app.route('/delete/content/<int:content_id>', methods=['POST'])
 def delete_content(content_id):
     conn = get_db()
-    c = conn.cursor()
-    try:
-        # Optionally check for _method=DELETE
-        # method = request.form.get('_method', '').upper()
-        # if method != 'DELETE':
-        #     return jsonify({'error': 'Method not allowed'}), 405
-
-        # Optionally get media path before deleting content to delete the file
-        # media_path_row = conn.execute('SELECT media_path FROM content WHERE id=?', (content_id,)).fetchone()
-        # media_path = media_path_row['media_path'] if media_path_row else None
-
-        c.execute('DELETE FROM content WHERE id=?', (content_id,))
-        deleted_rows = c.rowcount
-        conn.commit()
-        conn.close()
-
-        if deleted_rows == 0:
-            return jsonify({'error': 'Content not found'}), 404
-
-        # Optionally delete the media file
-        # if media_path:
-        #     try:
-        #         os.remove(os.path.join(BASE_DIR, media_path))
-        #         print(f"Deleted media file: {media_path}")
-        #     except OSError as e:
-        #         print(f"Error deleting media file {media_path}: {e}")
-
-        return jsonify({'success': True})
-
-    except Exception as e:
-        conn.rollback()
-        conn.close()
-        print(f"Error deleting content {content_id}: {e}")
-        return jsonify({'error': f'Failed to delete content: {str(e)}'}), 500
+    conn.execute('DELETE FROM content WHERE id = ?', (content_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('dashboard'))
 
 # --- Scheduler Setup ---
 platform_apis = {
     'youtube': post_to_youtube,
-    'instagram': post_to_instagram,
+    # 'instagram': post_to_instagram,  # Temporarily disabled
     'twitter': post_to_twitter,
     'pinterest': post_to_pinterest,
     'medium': post_to_medium,

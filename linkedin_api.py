@@ -2,6 +2,8 @@ import os
 from datetime import datetime
 import requests
 from dotenv import load_dotenv
+import json
+from security import decrypt_data
 
 load_dotenv()
 
@@ -89,12 +91,15 @@ class LinkedInAPI:
 
 def post_to_linkedin(account, content, base_dir):
     """
-    Main function to post content to LinkedIn.
-    Handles media uploads and text posts.
+    Main function to post content to LinkedIn, using credentials from the database.
     """
-    account_id = account['id']
-    access_token = os.getenv(f'LINKEDIN_ACCESS_TOKEN_{account_id}')
-    user_id = os.getenv(f'LINKEDIN_USER_ID_{account_id}')
+    try:
+        credentials = json.loads(decrypt_data(account['credentials']))
+    except (json.JSONDecodeError, TypeError):
+        raise ValueError("Invalid credentials format for LinkedIn account.")
+        
+    access_token = credentials.get('access_token')
+    user_id = credentials.get('user_id')
 
     try:
         api = LinkedInAPI(access_token, user_id)
@@ -106,14 +111,11 @@ def post_to_linkedin(account, content, base_dir):
         if media_path_relative:
             media_path_absolute = os.path.join(base_dir, media_path_relative)
             if os.path.exists(media_path_absolute):
-                print(f"[LinkedIn API] Uploading media from: {media_path_absolute}")
-                # Simple check for media type, could be more robust
                 media_type = 'VIDEO' if media_path_absolute.lower().endswith('.mp4') else 'IMAGE'
                 media_urn = api.upload_media(media_path_absolute, media_type=media_type)
-                print(f"[LinkedIn API] Media uploaded, URN: {media_urn}")
 
         if media_urn:
-            media_category = 'VIDEO' if media_urn.startswith('urn:li:digitalmediaAsset') and 'video' in media_urn else 'IMAGE'
+            media_category = 'VIDEO' if 'video' in media_urn else 'IMAGE'
             response = api.post_with_media(text_content, media_urn, media_category=media_category)
         else:
             response = api.post_text(text_content)
@@ -122,8 +124,6 @@ def post_to_linkedin(account, content, base_dir):
         return response
 
     except Exception as e:
-        print(f"Error posting to LinkedIn for account {account_id}: {e}")
-        # Re-raise the exception so the scheduler can log it as an error
         raise Exception(f"LinkedIn API Error: {e}")
 
     def schedule_post(self, text, scheduled_time, visibility='PUBLIC'):

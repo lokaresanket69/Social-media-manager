@@ -1,7 +1,9 @@
 import os
 import requests
 import mimetypes
+import json
 from datetime import datetime
+from security import decrypt_data
 
 class PinterestAPI:
     def __init__(self, access_token):
@@ -87,17 +89,18 @@ class PinterestAPI:
 
 def post_to_pinterest(account, content, base_dir):
     """
-    Main function to post a pin to Pinterest.
+    Main function to post a pin to Pinterest, using credentials from the database.
     """
-    account_id = account['id']
-    access_token = os.getenv(f'PINTEREST_ACCESS_TOKEN_{account_id}')
-    
-    # Pinterest requires a Board ID to post a pin. This should be configured per account.
-    # We will fetch it from an environment variable for now.
-    board_id = os.getenv(f'PINTEREST_BOARD_ID_{account_id}')
+    try:
+        credentials = json.loads(decrypt_data(account['credentials']))
+    except (json.JSONDecodeError, TypeError):
+        raise ValueError("Invalid credentials format for Pinterest account.")
+
+    access_token = credentials.get('access_token')
+    board_id = credentials.get('board_id')
 
     if not board_id:
-        raise ValueError(f"Pinterest Board ID is not configured for account {account_id}.")
+        raise ValueError("Pinterest Board ID is not configured for this account.")
 
     try:
         api = PinterestAPI(access_token)
@@ -122,5 +125,4 @@ def post_to_pinterest(account, content, base_dir):
         return response
 
     except Exception as e:
-        print(f"Error posting to Pinterest for account {account_id}: {e}")
         raise Exception(f"Pinterest API Error: {e}") 

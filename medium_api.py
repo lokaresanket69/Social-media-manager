@@ -2,6 +2,7 @@ import os
 import requests
 import json
 from datetime import datetime
+from security import decrypt_data
 
 class MediumAPI:
     def __init__(self, access_token):
@@ -55,11 +56,14 @@ class MediumAPI:
 
 def post_to_medium(account, content, base_dir):
     """
-    Main function to post content to Medium.
-    Constructs an HTML post from the content dictionary.
+    Main function to post content to Medium, using credentials from the database.
     """
-    account_id = account['id']
-    access_token = os.getenv(f'MEDIUM_AUTH_TOKEN_{account_id}')
+    try:
+        credentials = json.loads(decrypt_data(account['credentials']))
+    except (json.JSONDecodeError, TypeError):
+        raise ValueError("Invalid credentials format for Medium account.")
+
+    access_token = credentials.get('access_token')
 
     try:
         api = MediumAPI(access_token)
@@ -67,26 +71,19 @@ def post_to_medium(account, content, base_dir):
         title = content.get('title', 'No Title')
         description = content.get('description', '')
         hashtags = content.get('hashtags', '')
-        media_path_relative = content.get('media_path')
 
         # Construct HTML content for the post
-        # Medium doesn't upload media directly via this API endpoint,
-        # but you can embed images using <img> tags if they are hosted elsewhere.
-        # Here, we'll just create a text-based post.
         html_content = f"<h1>{title}</h1>\n<p>{description.replace('\n', '<br>')}</p>"
-
-        # Prepend '#' to each tag for display
         if hashtags:
             formatted_tags = [f"#{tag.strip()}" for tag in hashtags.split(',') if tag.strip()]
             html_content += f"<p><em>{' '.join(formatted_tags)}</em></p>"
         
-        # Medium API tags are passed as a list of strings
         tag_list = [tag.strip() for tag in hashtags.split(',') if tag.strip()]
 
         response = api.post_story(
             title=title,
             content=html_content,
-            tags=tag_list[:5],  # Medium allows a maximum of 5 tags
+            tags=tag_list[:5],
             publish_status='public'
         )
             
@@ -94,5 +91,4 @@ def post_to_medium(account, content, base_dir):
         return response
 
     except Exception as e:
-        print(f"Error posting to Medium for account {account_id}: {e}")
         raise Exception(f"Medium API Error: {e}") 

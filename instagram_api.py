@@ -1,20 +1,22 @@
 from instagrapi import Client
 import os
 import mimetypes
+import json
 
 def post_to_instagram(account, content, base_dir):
     """
-    Posts content to Instagram, handling both photo and video uploads.
-    Authenticates using username and password from environment variables.
+    Posts content to Instagram, using credentials stored in the database.
     """
-    account_id = account['id']
-    
-    # Read credentials from environment variables
-    username = os.getenv(f'INSTAGRAM_USERNAME_{account_id}')
-    password = os.getenv(f'INSTAGRAM_PASSWORD_{account_id}')
+    try:
+        credentials = json.loads(account['credentials'])
+    except (json.JSONDecodeError, TypeError):
+        raise ValueError("Invalid credentials format for Instagram account.")
+
+    username = credentials.get('username')
+    password = credentials.get('password')
 
     if not all([username, password]):
-        raise Exception(f"Missing Instagram credentials for account ID {account_id} in environment variables.")
+        raise ValueError("Missing Instagram username or password.")
 
     # Authenticate
     cl = Client()
@@ -33,15 +35,12 @@ def post_to_instagram(account, content, base_dir):
     if not os.path.exists(media_path_absolute):
         raise Exception(f"Media file not found at: {media_path_absolute}")
 
-    # Determine media type and upload
     media_type = mimetypes.guess_type(media_path_absolute)[0]
     
     try:
         if media_type and media_type.startswith('image/'):
-            print(f"[Instagram API] Uploading photo: {media_path_absolute}")
             response = cl.photo_upload(path=media_path_absolute, caption=caption)
         elif media_type and media_type.startswith('video/'):
-            print(f"[Instagram API] Uploading video: {media_path_absolute}")
             response = cl.video_upload(path=media_path_absolute, caption=caption)
         else:
             raise Exception(f"Unsupported media type for Instagram: {media_type}")

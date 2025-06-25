@@ -1,21 +1,24 @@
 import tweepy
 import os
+import json
+from security import decrypt_data
 
 def post_to_twitter(account, content, base_dir):
     """
-    Posts content to Twitter, handling both text-only and media tweets.
-    Credentials are read from environment variables based on the account ID.
+    Posts content to Twitter, reading credentials from the account database record.
     """
-    account_id = account['id']
-    
-    # Read credentials from environment variables
-    consumer_key = os.getenv(f'TWITTER_API_KEY_{account_id}')
-    consumer_secret = os.getenv(f'TWITTER_API_SECRET_KEY_{account_id}')
-    access_token = os.getenv(f'TWITTER_ACCESS_TOKEN_{account_id}')
-    access_token_secret = os.getenv(f'TWITTER_ACCESS_TOKEN_SECRET_{account_id}')
+    try:
+        credentials = json.loads(decrypt_data(account['credentials']))
+    except (json.JSONDecodeError, TypeError):
+        raise ValueError("Invalid credentials format for Twitter account.")
+
+    consumer_key = credentials.get('consumer_key')
+    consumer_secret = credentials.get('consumer_secret')
+    access_token = credentials.get('access_token')
+    access_token_secret = credentials.get('access_token_secret')
 
     if not all([consumer_key, consumer_secret, access_token, access_token_secret]):
-        raise Exception(f"Missing Twitter API credentials for account ID {account_id} in environment variables.")
+        raise ValueError("Missing one or more required Twitter API credentials.")
 
     # Authenticate with Twitter API v1.1 for media uploads
     auth = tweepy.OAuth1UserHandler(consumer_key, consumer_secret, access_token, access_token_secret)
@@ -37,13 +40,11 @@ def post_to_twitter(account, content, base_dir):
         media_path_absolute = os.path.join(base_dir, media_path_relative)
         if os.path.exists(media_path_absolute):
             try:
-                # Use API v1.1 to upload media
                 media = api_v1.media_upload(filename=media_path_absolute)
                 media_ids.append(media.media_id_string)
             except Exception as e:
                 raise Exception(f"Error uploading media to Twitter: {e}")
 
-    # Post the tweet using API v2
     try:
         if media_ids:
             response = client.create_tweet(text=tweet_text, media_ids=media_ids)

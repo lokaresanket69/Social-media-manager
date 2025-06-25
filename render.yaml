@@ -18,7 +18,9 @@ services:
     # Go to Environment -> Add Environment Group and create a group from your .env file.
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0 # Specify a Python version
+        value: 3.13.0 # Specify a Python version
+      - key: ENCRYPTION_KEY
+        generateValue: true # Render will generate a secure key
       - key: SECRET_KEY
         # Generate a random string for this in Render
         generateValue: true
