@@ -7,4 +7,5 @@ Flask-Login==0.6.2
 Werkzeug==2.3.7
 tweepy==4.16.0
 gunicorn==21.2.0
-cryptography==42.0.5 
+cryptography==42.0.5
+python-dateutil 
