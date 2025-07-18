@@ -86,3 +86,4 @@ media/
 
 # Flask specific
 instance/
+/generated/prisma

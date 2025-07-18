@@ -120,7 +120,7 @@
                         <select class="form-select" id="platform" name="platform_id" required>
                             <option value="">Select a platform</option>
                             {% for platform in platforms %}
-                                <option value="{{ platform.id }}">{{ platform.display_name }}</option>
+                                <option value="{{ platform.id }}" data-platform-name="{{ platform.name }}">{{ platform.display_name }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -128,17 +128,52 @@
                         <label for="accountName" class="form-label">Account Name</label>
                         <input type="text" class="form-control" id="accountName" name="account_name" required>
                     </div>
-                    <div class="mb-3">
-                        <label for="credential" class="form-label">Credentials</label>
-                        <input type="file" class="form-control" id="credential" name="credential">
-                        <div class="form-text">Upload your API credentials file or enter token below</div>
+                    <div id="instagramFields" style="display:none;">
+                        <div class="mb-3">
+                            <label for="instaUsername" class="form-label">Instagram Username</label>
+                            <input type="text" class="form-control" id="instaUsername" name="username">
+                        </div>
+                        <div class="mb-3">
+                            <label for="instaPassword" class="form-label">Instagram Password</label>
+                            <input type="password" class="form-control" id="instaPassword" name="password">
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <label for="credentialToken" class="form-label">Or Enter Token</label>
-                        <textarea class="form-control" id="credentialToken" name="credential_token" rows="3"></textarea>
+                    <div id="otherPlatformFields">
+                        <div class="mb-3">
+                            <label for="credential" class="form-label">Credentials</label>
+                            <input type="file" class="form-control" id="credential" name="credential">
+                            <div class="form-text">Upload your API credentials file or enter token below</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="credentialToken" class="form-label">Or Enter Token</label>
+                            <textarea class="form-control" id="credentialToken" name="credential_token" rows="3"></textarea>
+                        </div>
                     </div>
                 </form>
             </div>
+            <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                var platformSelect = document.getElementById('platform');
+                var instaFields = document.getElementById('instagramFields');
+                var otherFields = document.getElementById('otherPlatformFields');
+                if (platformSelect) {
+                    platformSelect.addEventListener('change', function() {
+                        var selected = platformSelect.options[platformSelect.selectedIndex];
+                        if (selected && selected.getAttribute('data-platform-name') === 'instagram') {
+                            instaFields.style.display = '';
+                            otherFields.style.display = 'none';
+                            document.getElementById('instaUsername').required = true;
+                            document.getElementById('instaPassword').required = true;
+                        } else {
+                            instaFields.style.display = 'none';
+                            otherFields.style.display = '';
+                            document.getElementById('instaUsername').required = false;
+                            document.getElementById('instaPassword').required = false;
+                        }
+                    });
+                }
+            });
+            </script>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="submit" class="btn btn-primary" form="addAccountForm">Add Account</button>

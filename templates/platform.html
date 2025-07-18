@@ -103,7 +103,7 @@
                                         <small class="text-danger d-block">Error: {{ content.error }}</small>
                                     {% endif %}
                                 </td>
-                                <td>{{ content.schedule_time or 'Not scheduled' }}</td>
+                                <td class="scheduled-time-cell">{{ content.schedule_time or 'Not scheduled' }}</td>
                                 <td>
                                     <button class="btn btn-sm btn-outline-primary">
                                         <i class="fas fa-edit"></i>
@@ -140,6 +140,21 @@
                         <label for="accountName" class="form-label">Account Name</label>
                         <input type="text" class="form-control" id="accountName" name="account_name" required>
                     </div>
+                    {% if platform.name == 'instagram' %}
+                    <div class="mb-3">
+                        <label for="instaUsername" class="form-label">Instagram Username</label>
+                        <input type="text" class="form-control" id="instaUsername" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="instaPassword" class="form-label">Instagram Password</label>
+                        <input type="password" class="form-control" id="instaPassword" name="password" required>
+                    </div>
+                    {% elif platform.name == 'linkedin' %}
+                    <div class="mb-3 text-center">
+                        <a href="/linkedin/auth" class="btn btn-primary w-100">Connect LinkedIn</a>
+                        <div class="form-text mt-2">Connect your LinkedIn account securely via OAuth. No file or token needed.</div>
+                    </div>
+                    {% else %}
                     <div class="mb-3">
                         <label for="credential" class="form-label">Credentials</label>
                         <input type="file" class="form-control" id="credential" name="credential">
@@ -149,11 +164,14 @@
                         <label for="credentialToken" class="form-label">Or Enter Token</label>
                         <textarea class="form-control" id="credentialToken" name="credential_token" rows="3"></textarea>
                     </div>
+                    {% endif %}
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                {% if platform.name != 'linkedin' %}
                 <button type="submit" class="btn btn-primary" form="addAccountForm">Add Account</button>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -235,23 +253,14 @@
             postTitle.setAttribute('required', 'true'); // Title is generally always required
 
             // Platform-specific adjustments
-            if (platformName === 'quora' || platformName === 'medium') {
+            if (platformName === 'medium') {
                 mediaGroup.style.display = 'none'; // Hide media upload for text-only platforms
                 postMedia.removeAttribute('required'); // Ensure it's not required
-
-                // For Quora and Medium, description is the main content
                 postDescription.setAttribute('required', 'true');
                 postDescription.setAttribute('rows', '6'); // Give more space for content
-
-                if (platformName === 'quora') {
-                    postDescription.previousElementSibling.textContent = 'Answer/Content';
-                    postTitle.previousElementSibling.textContent = 'Question/Topic';
-                    hashtagsGroup.style.display = 'block'; // Quora uses topics, so hashtags group can be reused
-                } else if (platformName === 'medium') {
-                    postDescription.previousElementSibling.textContent = 'Article Content';
-                    postTitle.previousElementSibling.textContent = 'Article Title';
-                    hashtagsGroup.style.display = 'block'; // Medium uses tags
-                }
+                postDescription.previousElementSibling.textContent = 'Article Content';
+                postTitle.previousElementSibling.textContent = 'Article Title';
+                hashtagsGroup.style.display = 'block'; // Medium uses tags
             } else if (platformName === 'pinterest') {
                 mediaGroup.style.display = 'block'; // Show media upload
                 postMedia.setAttribute('required', 'true'); // Media is required for Pinterest
@@ -343,5 +352,16 @@
             }
         });
     });
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.scheduled-time-cell').forEach(function(cell) {
+    const utc = cell.textContent.trim();
+    if (utc && utc !== 'Not scheduled') {
+      const local = new Date(utc).toLocaleString();
+      cell.textContent = local;
+    }
+  });
+});
 </script>
 {% endblock %} 

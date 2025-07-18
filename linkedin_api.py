@@ -36,8 +36,10 @@ class LinkedInAPI:
         if media_urn and media_category:
             share_content['shareMediaCategory'] = media_category
             share_content['media'] = [{'status': 'READY', 'media': media_urn}]
+            print(f"[LinkedIn API] Posting with media category: {media_category}")
         else:
             share_content['shareMediaCategory'] = 'NONE'
+            print(f"[LinkedIn API] Posting text-only content")
 
         payload = {
             'author': f"urn:li:person:{self.user_id}",
@@ -46,8 +48,13 @@ class LinkedInAPI:
             'visibility': {'com.linkedin.ugc.MemberNetworkVisibility': visibility}
         }
         
+        print(f"[LinkedIn API] Final payload: {json.dumps(payload, indent=2)}")
         response = requests.post(endpoint, headers=self.headers, json=payload)
-        response.raise_for_status()
+        
+        if response.status_code != 201:
+            print(f"[LinkedIn API] Post failed: {response.status_code} {response.text}")
+            response.raise_for_status()
+        
         return response.json()
 
     def upload_media(self, file_path, media_type='IMAGE'):
@@ -80,11 +87,29 @@ class LinkedInAPI:
             elif file_path.lower().endswith('.gif'):
                 content_type = 'image/gif'
             elif file_path.lower().endswith('.mp4'):
-                 content_type = 'video/mp4'
+                content_type = 'video/mp4'
+            elif file_path.lower().endswith('.mov'):
+                content_type = 'video/quicktime'
+            elif file_path.lower().endswith('.avi'):
+                content_type = 'video/x-msvideo'
             
-            upload_headers = {'Content-Type': content_type}
+            # For videos, we need to use different headers
+            if media_type == 'VIDEO':
+                upload_headers = {
+                    'Content-Type': content_type,
+                    'Authorization': f'Bearer {self.access_token}'
+                }
+            else:
+                upload_headers = {'Content-Type': content_type}
+            
+            print(f"[LinkedIn API] Uploading {media_type} with content-type: {content_type}")
             upload_response = requests.put(upload_url, headers=upload_headers, data=file)
-            upload_response.raise_for_status()
+            
+            if upload_response.status_code not in [200, 201]:
+                print(f"[LinkedIn API] Upload failed: {upload_response.status_code} {upload_response.text}")
+                raise Exception(f"Upload failed: {upload_response.status_code} {upload_response.text}")
+            
+            print(f"[LinkedIn API] Upload successful for {media_type} (status: {upload_response.status_code})")
         
         return asset_urn
 
@@ -93,37 +118,58 @@ def post_to_linkedin(account, content, base_dir):
     """
     Main function to post content to LinkedIn, using credentials from the database.
     """
+    # Support both sqlite3.Row and dict for both account and content
+    if not isinstance(account, dict):
+        account = dict(account)
+    if not isinstance(content, dict):
+        content = dict(content)
     try:
         credentials = json.loads(decrypt_data(account['credentials']))
     except (json.JSONDecodeError, TypeError):
         raise ValueError("Invalid credentials format for LinkedIn account.")
-        
     access_token = credentials.get('access_token')
-    user_id = credentials.get('user_id')
-
+    person_urn = credentials.get('person_urn')
+    
+    # Extract user ID from person URN if needed
+    if person_urn and person_urn.startswith('urn:li:person:'):
+        user_id = person_urn.split(':')[-1]
+    else:
+        user_id = credentials.get('user_id')
+    
+    if not user_id:
+        raise ValueError("No user ID or person URN found in credentials")
+    
     try:
         api = LinkedInAPI(access_token, user_id)
-        
         text_content = f"{content.get('title', '')}\n\n{content.get('description', '')}\n\n{content.get('hashtags', '')}".strip()
         media_path_relative = content.get('media_path')
         media_urn = None
-
         if media_path_relative:
             media_path_absolute = os.path.join(base_dir, media_path_relative)
             if os.path.exists(media_path_absolute):
-                media_type = 'VIDEO' if media_path_absolute.lower().endswith('.mp4') else 'IMAGE'
+                # Check for video file extensions
+                video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.wmv']
+                is_video = any(media_path_absolute.lower().endswith(ext) for ext in video_extensions)
+                media_type = 'VIDEO' if is_video else 'IMAGE'
+                print(f"[LinkedIn API] Detected media type: {media_type} for file: {media_path_absolute}")
                 media_urn = api.upload_media(media_path_absolute, media_type=media_type)
-
+        # Log the request payload
+        print(f"[LinkedIn API] Request payload: {text_content}")
         if media_urn:
-            media_category = 'VIDEO' if 'video' in media_urn else 'IMAGE'
+            # Determine media category based on the actual media type, not the URN
+            media_category = 'VIDEO' if media_type == 'VIDEO' else 'IMAGE'
+            print(f"[LinkedIn API] Posting with media: {media_urn}, category: {media_category}")
             response = api.post_with_media(text_content, media_urn, media_category=media_category)
         else:
+            print(f"[LinkedIn API] Posting text-only update.")
             response = api.post_text(text_content)
-            
         print(f"[LinkedIn API] Post successful: {response}")
         return response
-
+    except requests.HTTPError as http_err:
+        print(f"[LinkedIn API] HTTPError: {http_err.response.status_code} {http_err.response.text}")
+        raise Exception(f"LinkedIn API Error: {http_err.response.status_code} {http_err.response.text}")
     except Exception as e:
+        print(f"[LinkedIn API] Exception: {e}")
         raise Exception(f"LinkedIn API Error: {e}")
 
     def schedule_post(self, text, scheduled_time, visibility='PUBLIC'):

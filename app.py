@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 load_dotenv()
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
 from flask_cors import CORS
 import sqlite3
 import os
@@ -10,15 +10,18 @@ from dateutil.parser import isoparse
 from dateutil.tz import tzlocal
 from apscheduler.schedulers.background import BackgroundScheduler
 from security import encrypt_data, decrypt_data
+import requests
+from urllib.parse import urlencode
 
 # --- Local API Modules ---
 from scheduler import process_scheduled_posts
 from youtube_api import post_to_youtube
-# from instagram_api import post_to_instagram
+from instagram_api import post_to_instagram  # Enable Instagram
 from twitter_api import post_to_twitter
 from pinterest_api import post_to_pinterest
 from medium_api import post_to_medium
 from linkedin_api import post_to_linkedin
+from reddit_api import post_to_reddit
 
 # --- App Setup ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -53,7 +56,8 @@ def init_db():
     )''')
     platforms = [
         ('youtube', 'YouTube'), ('instagram', 'Instagram'), ('twitter', 'Twitter'),
-        ('pinterest', 'Pinterest'), ('medium', 'Medium'), ('linkedin', 'LinkedIn')
+        ('pinterest', 'Pinterest'), ('medium', 'Medium'), ('linkedin', 'LinkedIn'),
+        ('reddit', 'Reddit')
     ]
     c.executemany('INSERT OR IGNORE INTO platforms (name, display_name) VALUES (?, ?)', platforms)
     conn.commit()
@@ -71,16 +75,103 @@ def api_platforms():
 
 @app.route('/api/accounts', methods=['GET', 'POST'])
 def api_accounts():
+    import json  # Ensure json is always available
     conn = get_db()
     if request.method == 'POST':
         data = request.form
         platform_id = data.get('platform_id')
         name = data.get('account_name')
-        credentials = {key: value for key, value in data.items() if key not in ['platform_id', 'account_name']}
+        credentials = {}
+        # Check platform early
+        platform_name = None
+        if platform_id:
+            c = conn.cursor()
+            platform = c.execute('SELECT name FROM platforms WHERE id=?', (platform_id,)).fetchone()
+            if platform:
+                platform_name = platform['name']
+        # Instagram: use username/password fields only
+        if platform_name == 'instagram':
+            username = data.get('username')
+            password = data.get('password')
+            if username and password:
+                credentials = {"username": username, "password": password}
+            else:
+                return jsonify({'error': 'Instagram username and password are required.'}), 400
+        else:
+            # Handle uploaded credential file
+            if 'credential' in request.files and request.files['credential'].filename:
+                cred_file = request.files['credential']
+                try:
+                    raw_creds = json.load(cred_file)
+                    # Accept both flat and nested (installed/web) formats
+                    if 'client_id' in raw_creds and 'client_secret' in raw_creds:
+                        credentials = raw_creds
+                    elif 'installed' in raw_creds:
+                        credentials = raw_creds['installed']
+                    elif 'web' in raw_creds:
+                        credentials = raw_creds['web']
+                    else:
+                        return jsonify({'error': 'Unrecognized credential file format. Please upload a valid Google OAuth credentials file.'}), 400
+                except Exception as e:
+                    return jsonify({'error': f'Failed to parse credential file: {e}'}), 400
+            elif 'credential_token' in data and data['credential_token']:
+                try:
+                    credentials = json.loads(data['credential_token'])
+                except Exception as e:
+                    return jsonify({'error': f'Failed to parse credential token: {e}'}), 400
+            # Fallback: use any other form fields as credentials
+            if not credentials:
+                credentials = {key: value for key, value in data.items() if key not in ['platform_id', 'account_name']}
         if not all([platform_id, name, credentials]):
             return jsonify({'error': 'Platform, Account Name, and Credentials are required.'}), 400
-        try:
+        # Special check for YouTube: must have refresh_token
+        if platform_id:
             c = conn.cursor()
+            platform = c.execute('SELECT name FROM platforms WHERE id=?', (platform_id,)).fetchone()
+            if platform and platform['name'] == 'youtube':
+                if not all(k in credentials for k in ['client_id', 'client_secret']):
+                    return jsonify({'error': 'YouTube credentials missing client_id or client_secret.'}), 400
+                if 'refresh_token' not in credentials:
+                    return jsonify({'error': 'Your credentials file is valid, but you need to generate a refresh_token. Please follow the instructions in the documentation to obtain one.'}), 400
+        # Credential validation logic
+        try:
+            # Map platform_id to platform name
+            c = conn.cursor()
+            platform = c.execute('SELECT name FROM platforms WHERE id=?', (platform_id,)).fetchone()
+            if not platform:
+                return jsonify({'error': 'Invalid platform selected.'}), 400
+            platform_name = platform['name']
+            # Define dummy_content for validation
+            dummy_content = {
+                "title": "Test",
+                "description": "Test",
+                "hashtags": "",
+                "media_path": "static/images/test.jpg"
+            }
+            # Try to validate credentials using the API function
+            api_func = platform_apis.get(platform_name)
+            if api_func:
+                # Dummy content for validation (minimal, won't post)
+                if platform_name == 'youtube':
+                    # Use a lightweight API call to validate credentials
+                    try:
+                        from google.oauth2.credentials import Credentials
+                        from googleapiclient.discovery import build
+                        creds = Credentials.from_authorized_user_info(credentials, ['https://www.googleapis.com/auth/youtube.upload'])
+                        youtube = build('youtube', 'v3', credentials=creds)
+                        # Try to list channels as a validation step
+                        youtube.channels().list(mine=True, part='id').execute()
+                    except Exception as e:
+                        return jsonify({'error': f'Credential validation failed: {str(e)}'}), 400
+                else:
+                    try:
+                        api_func({'credentials': encrypt_data(json.dumps(credentials))}, dummy_content, BASE_DIR)
+                    except ValueError as e:
+                        if platform_name == 'instagram' and 'Invalid credentials format' in str(e):
+                            return jsonify({'error': 'Credential validation failed: Instagram credentials must be a JSON object with "username" and "password" fields, e.g. {"username": "your_instagram_username", "password": "your_instagram_password"}.'}), 400
+                        return jsonify({'error': f'Credential validation failed: {str(e)}'}), 400
+                    except Exception as e:
+                        return jsonify({'error': f'Credential validation failed: {str(e)}'}), 400
             encrypted_credentials = encrypt_data(json.dumps(credentials))
             c.execute('INSERT INTO accounts (platform_id, name, credentials, created_at) VALUES (?, ?, ?, ?)',
                       (platform_id, name, encrypted_credentials, datetime.utcnow().isoformat()))
@@ -155,7 +246,8 @@ def api_content():
                        media_path, schedule_time_utc_iso, created_at))
             conn.commit()
             conn.close()
-            return jsonify({'success': True})
+            flash('Content scheduled successfully!', 'success')
+            return redirect(url_for('dashboard'))
         except Exception as e:
             return jsonify({'error': f'Failed to save content: {str(e)}'}), 500
     else:
@@ -168,6 +260,13 @@ def api_content():
             rows = conn.execute('SELECT * FROM content').fetchall()
         conn.close()
         return jsonify([dict(row) for row in rows])
+
+@app.route('/api/errors', methods=['GET'])
+def api_errors():
+    conn = get_db()
+    errors = conn.execute('SELECT * FROM content WHERE status="error"').fetchall()
+    conn.close()
+    return jsonify([dict(row) for row in errors])
 
 # --- Page Routes ---
 @app.route('/')
@@ -213,6 +312,190 @@ def platform_page(platform_name):
 
 # The old YouTube OAuth routes (authorize_youtube, oauth2callback_youtube) are no longer needed
 # as credentials are now added directly in the 'Add Account' form. They have been removed.
+
+import os
+from flask import redirect, request
+import requests
+from dotenv import load_dotenv
+
+load_dotenv()
+
+LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")
+LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")
+LINKEDIN_REDIRECT_URI = os.getenv("LINKEDIN_REDIRECT_URI")  # Use .env value, not hardcoded
+
+# Store tokens and person URNs in memory for demo (replace with DB in production)
+linkedin_person_urns = {}
+linkedin_post_tokens = {}
+
+@app.route("/linkedin/auth-oidc")
+def linkedin_auth_oidc():
+    scope = "openid profile email"
+    auth_url = (
+        "https://www.linkedin.com/oauth/v2/authorization"
+        f"?response_type=code&client_id={LINKEDIN_CLIENT_ID}"
+        f"&redirect_uri={LINKEDIN_REDIRECT_URI}/oidc"
+        f"&scope={scope.replace(' ', '%20')}"
+    )
+    return f'<a href="{auth_url}"><button>Connect LinkedIn (Get Person URN)</button></a>'
+
+@app.route("/linkedin/callback/oidc")
+def linkedin_callback_oidc():
+    code = request.args.get("code")
+    error = request.args.get("error")
+    error_description = request.args.get("error_description")
+    if error:
+        return f"LinkedIn OIDC error: {error} - {error_description if error_description else ''}", 400
+    if not code:
+        return f"No code provided in callback. Full query: {request.query_string.decode()}", 400
+    # Exchange code for access token
+    token_url = "https://www.linkedin.com/oauth/v2/accessToken"
+    data = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": f"{LINKEDIN_REDIRECT_URI}/oidc",
+        "client_id": LINKEDIN_CLIENT_ID,
+        "client_secret": LINKEDIN_CLIENT_SECRET,
+    }
+    resp = requests.post(token_url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+    if resp.status_code != 200:
+        return f"Failed to get OIDC access token: {resp.text}", 400
+    token_data = resp.json()
+    access_token = token_data.get("access_token")
+    if not access_token:
+        return f"No access token in response: {token_data}", 400
+    # Fetch user info from /userinfo endpoint
+    userinfo_resp = requests.get(
+        "https://api.linkedin.com/v2/userinfo",
+        headers={"Authorization": f"Bearer {access_token}"}
+    )
+    if userinfo_resp.status_code != 200:
+        return f"Failed to fetch LinkedIn userinfo: {userinfo_resp.text}", 400
+    userinfo = userinfo_resp.json()
+    person_urn = f"urn:li:person:{userinfo['sub']}"
+    email = userinfo.get('email')
+    name = userinfo.get('name', email)
+    # Store info in session for registration
+    session['linkedin_account'] = {
+        'access_token': access_token,
+        'person_urn': person_urn,
+        'email': email,
+        'name': name
+    }
+    # Redirect to registration endpoint
+    return redirect(url_for('linkedin_register_account'))
+
+@app.route("/linkedin/register-account")
+def linkedin_register_account():
+    account = session.pop('linkedin_account', None)
+    if not account:
+        return "No LinkedIn account info found in session. Please connect again.", 400
+    conn = get_db()
+    c = conn.cursor()
+    # Get LinkedIn platform_id
+    platform = c.execute('SELECT id FROM platforms WHERE name=?', ('linkedin',)).fetchone()
+    if not platform:
+        conn.close()
+        return "LinkedIn platform not found in DB.", 500
+    platform_id = platform['id']
+    # Check if account already exists
+    existing = c.execute('SELECT id FROM accounts WHERE platform_id=? AND name=?', (platform_id, account['name'])).fetchone()
+    if existing:
+        conn.close()
+        flash('LinkedIn account already registered.', 'info')
+        return redirect(url_for('platform_page', platform_name='linkedin'))
+    # Store credentials as JSON
+    credentials = {
+        'access_token': account['access_token'],
+        'person_urn': account['person_urn'],
+        'email': account['email']
+    }
+    encrypted_credentials = encrypt_data(json.dumps(credentials))
+    
+    # Insert the account
+    c.execute('INSERT INTO accounts (platform_id, name, credentials, created_at) VALUES (?, ?, ?, ?)',
+              (platform_id, account['name'], encrypted_credentials, datetime.utcnow().isoformat()))
+    conn.commit()
+    conn.close()
+    flash('LinkedIn account registered successfully!', 'success')
+    return redirect(url_for('platform_page', platform_name='linkedin'))
+@app.route("/linkedin/auth-post")
+def linkedin_auth_post():
+    email = request.args.get("email")
+    if not email:
+        return "Missing email. Please authenticate with OIDC first.", 400
+    scope = "w_member_social"
+    auth_url = (
+        "https://www.linkedin.com/oauth/v2/authorization"
+        f"?response_type=code&client_id={LINKEDIN_CLIENT_ID}"
+        f"&redirect_uri={LINKEDIN_REDIRECT_URI}/post"
+        f"&scope={scope.replace(' ', '%20')}"
+        f"&state={email}"
+    )
+    return f'<a href="{auth_url}"><button>Connect LinkedIn for Posting</button></a>'
+
+@app.route("/linkedin/callback/post")
+def linkedin_callback_post():
+    code = request.args.get("code")
+    error = request.args.get("error")
+    error_description = request.args.get("error_description")
+    email = request.args.get("state")
+    if error:
+        return f"LinkedIn OAuth error: {error} - {error_description if error_description else ''}", 400
+    if not code or not email:
+        return f"No code or email provided in callback. Full query: {request.query_string.decode()}", 400
+    # Exchange code for access token
+    token_url = "https://www.linkedin.com/oauth/v2/accessToken"
+    data = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": f"{LINKEDIN_REDIRECT_URI}/post",
+        "client_id": LINKEDIN_CLIENT_ID,
+        "client_secret": LINKEDIN_CLIENT_SECRET,
+    }
+    resp = requests.post(token_url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+    if resp.status_code != 200:
+        return f"Failed to get posting access token: {resp.text}", 400
+    token_data = resp.json()
+    access_token = token_data.get("access_token")
+    if not access_token:
+        return f"No access token in response: {token_data}", 400
+    # Store posting access token in memory (replace with DB in production)
+    linkedin_post_tokens[email] = access_token
+    return f"LinkedIn posting authentication successful!<br>Access Token stored for posting.<br><a href='/linkedin/post-example?email={email}'>Post Example</a>"
+
+
+@app.route("/linkedin/post-example")
+def linkedin_post_example():
+    email = request.args.get("email")
+    person_urn = linkedin_person_urns.get(email)
+    access_token = linkedin_post_tokens.get(email)
+    if not person_urn or not access_token:
+        return "No Person URN or access token found for this user. Please authenticate with both OIDC and posting flows.", 400
+    # Prepare post body as per LinkedIn docs
+    post_body = {
+        "author": person_urn,
+        "lifecycleState": "PUBLISHED",
+        "specificContent": {
+            "com.linkedin.ugc.ShareContent": {
+                "shareCommentary": {"text": "Hello World! This is my first Share on LinkedIn!"},
+                "shareMediaCategory": "NONE"
+            }
+        },
+        "visibility": {
+            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+        }
+    }
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "X-Restli-Protocol-Version": "2.0.0",
+        "Content-Type": "application/json"
+    }
+    resp = requests.post("https://api.linkedin.com/v2/ugcPosts", json=post_body, headers=headers)
+    if resp.status_code == 201:
+        return f"Post successful! LinkedIn response: {resp.json()}"
+    else:
+        return f"Failed to post: {resp.status_code} {resp.text}", 400
 
 @app.route('/delete/account/<int:account_id>', methods=['POST'])
 def delete_account(account_id):
@@ -263,11 +546,12 @@ def delete_content(content_id):
 # --- Scheduler Setup ---
 platform_apis = {
     'youtube': post_to_youtube,
-    # 'instagram': post_to_instagram,  # Temporarily disabled
+    'instagram': post_to_instagram,  # Enabled
     'twitter': post_to_twitter,
     'pinterest': post_to_pinterest,
     'medium': post_to_medium,
     'linkedin': post_to_linkedin,
+    'reddit': post_to_reddit,
 }
 
 scheduler = BackgroundScheduler(timezone=timezone.utc)

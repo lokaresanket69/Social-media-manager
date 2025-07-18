@@ -10,4 +10,5 @@ gunicorn==21.2.0
 cryptography==42.0.5
 python-dateutil
 google-api-python-client
-google-auth-httplib2 
+google-auth-httplib2
+praw==7.8.1 
