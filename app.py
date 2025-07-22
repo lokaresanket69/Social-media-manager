@@ -130,52 +130,8 @@ def api_accounts():
             c = conn.cursor()
             platform = c.execute('SELECT name FROM platforms WHERE id=?', (platform_id,)).fetchone()
             if platform and platform['name'] == 'youtube':
-                try:
-                    # --- Bulletproof credential extraction for uploads with auto-wrapping ---
-                    import json
-                    def extract_youtube_creds_from_upload(uploaded):
-                        print("DEBUG: Received credentials type:", type(uploaded))
-                        print("DEBUG: Received credentials value (first 200 chars):", str(uploaded)[:200])
-                        if hasattr(uploaded, 'read'):
-                            uploaded = uploaded.read()
-                        if isinstance(uploaded, bytes):
-                            uploaded = uploaded.decode('utf-8')
-                        if isinstance(uploaded, str):
-                            try:
-                                creds = json.loads(uploaded)
-                            except Exception:
-                                try:
-                                    with open(uploaded, 'r') as f:
-                                        creds = json.load(f)
-                                except Exception:
-                                    raise ValueError("Could not parse credentials as JSON or file path")
-                        else:
-                            creds = uploaded
-                        # Accepts flat, 'installed', or 'web' wrapped JSON
-                        if 'installed' in creds:
-                            return creds['installed']
-                        elif 'web' in creds:
-                            return creds['web']
-                        # If it's a flat dict, wrap as 'installed'
-                        required_keys = {'client_id', 'client_secret', 'auth_uri', 'token_uri'}
-                        if required_keys.issubset(set(creds.keys())):
-                            return {
-                                'client_id': creds['client_id'],
-                                'client_secret': creds['client_secret'],
-                                'auth_uri': creds['auth_uri'],
-                                'token_uri': creds['token_uri'],
-                                'auth_provider_x509_cert_url': creds.get('auth_provider_x509_cert_url', ''),
-                                'redirect_uris': creds.get('redirect_uris', ["urn:ietf:wg:oauth:2.0:oob", "http://localhost"])
-                            }
-                        raise ValueError("Credentials missing required keys for OAuth.")
-                    credentials = extract_youtube_creds_from_upload(credentials)
-                    from youtube_auth_simple import process_youtube_credentials_simple
-                    # Always wrap as 'installed' for Google OAuth
-                    result = process_youtube_credentials_simple({'installed': credentials}, name)
-                    credentials = json.loads(decrypt_data(result['credentials']))
-                    name = result['name']  # Update name with channel info
-                except Exception as e:
-                    return jsonify({'error': f'YouTube authentication failed: {str(e)}'}), 400
+                # Instruct user to use the new OAuth flow
+                return jsonify({'error': 'YouTube account connection now requires the new OAuth flow. Please use /youtube/authorize to connect your YouTube account.'}), 400
         # Special handling for Reddit: process and validate credentials from form fields
         if platform_id:
             c = conn.cursor()
