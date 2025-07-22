@@ -1,9 +1,7 @@
 import os
 import json
-import requests
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from security import encrypt_data
 
@@ -13,104 +11,59 @@ SCOPES = [
     'https://www.googleapis.com/auth/youtube.readonly'
 ]
 
-def process_youtube_credentials_simple(credentials_json, account_name):
-    """
-    Simplified YouTube credentials processing that works with both web and desktop apps
-    """
-    try:
-        # Parse the uploaded JSON file
-        if isinstance(credentials_json, str):
-            creds_data = json.loads(credentials_json)
-        else:
-            creds_data = credentials_json
-            
-        # Check if it already has tokens
-        if 'refresh_token' in creds_data:
-            # Already has tokens, just validate
-            return validate_and_return_credentials(creds_data, account_name)
-        
-        # For new credentials, we need to do OAuth flow
-        return handle_simple_oauth_flow(creds_data, account_name)
-            
-    except Exception as e:
-        raise Exception(f"Failed to process YouTube credentials: {str(e)}")
+# Path to your Google OAuth client secrets file (web application type)
+CLIENT_SECRETS_FILE = os.getenv('YOUTUBE_CLIENT_SECRETS', 'client_secret.json')
+REDIRECT_URI = os.getenv('YOUTUBE_REDIRECT_URI', 'https://social-media-manager-5j5s.onrender.com/youtube/oauth2callback')
 
-def handle_simple_oauth_flow(creds_data, account_name):
-    """
-    Simple OAuth flow that works with both web and desktop apps
-    """
-    try:
-        # Create a temporary credentials file
-        temp_creds_file = f"temp_creds_{account_name}.json"
-        with open(temp_creds_file, 'w') as f:
-            json.dump(creds_data, f)
-        
-        # Always use installed app flow (works for both web and desktop)
-        flow = InstalledAppFlow.from_client_secrets_file(temp_creds_file, SCOPES)
-        
-        # Use a specific port to avoid conflicts
-        creds = flow.run_local_server(port=8080, prompt='consent')
-        
-        # Clean up temp file
-        os.remove(temp_creds_file)
-        
-        # Extract credentials info
-        client_id = None
-        client_secret = None
-        
-        if 'installed' in creds_data:
-            client_id = creds_data['installed']['client_id']
-            client_secret = creds_data['installed']['client_secret']
-        elif 'web' in creds_data:
-            client_id = creds_data['web']['client_id']
-            client_secret = creds_data['web']['client_secret']
-        else:
-            client_id = creds_data.get('client_id')
-            client_secret = creds_data.get('client_secret')
-        
-        # Convert to dictionary format
-        creds_dict = {
-            'client_id': client_id,
-            'client_secret': client_secret,
-            'refresh_token': creds.refresh_token,
-            'token_uri': 'https://oauth2.googleapis.com/token'
-        }
-        
-        # Validate the credentials
-        return validate_and_return_credentials(creds_dict, account_name)
-        
-    except Exception as e:
-        # Clean up temp file if it exists
-        if os.path.exists(temp_creds_file):
-            os.remove(temp_creds_file)
-        raise Exception(f"OAuth flow failed: {str(e)}")
+# 1. Generate the Google OAuth URL for user consent
+
+def get_youtube_auth_url(state=None):
+    flow = Flow.from_client_secrets_file(
+        CLIENT_SECRETS_FILE,
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI
+    )
+    auth_url, _ = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent',
+        state=state
+    )
+    return auth_url
+
+# 2. Exchange the authorization code for tokens and validate
+
+def exchange_code_and_store_credentials(code, account_name):
+    flow = Flow.from_client_secrets_file(
+        CLIENT_SECRETS_FILE,
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI
+    )
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+    creds_dict = {
+        'client_id': creds.client_id,
+        'client_secret': creds.client_secret,
+        'refresh_token': creds.refresh_token,
+        'token_uri': creds.token_uri,
+        'token': creds.token
+    }
+    # Validate and enrich credentials
+    return validate_and_return_credentials(creds_dict, account_name)
+
+# 3. Validate credentials and return encrypted result
 
 def validate_and_return_credentials(creds_dict, account_name):
-    """
-    Validate credentials and return them in the correct format
-    """
     try:
-        # Create credentials object
         creds = Credentials.from_authorized_user_info(creds_dict, SCOPES)
-        
-        # Test the credentials by making a simple API call
         youtube = build('youtube', 'v3', credentials=creds)
         channels_response = youtube.channels().list(mine=True, part='snippet').execute()
-        
         if not channels_response.get('items'):
             raise Exception("No YouTube channels found for this account")
-        
-        # Get channel info
         channel = channels_response['items'][0]
         channel_name = channel['snippet']['title']
-        
-        # Add channel info to credentials
         creds_dict['channel_name'] = channel_name
         creds_dict['channel_id'] = channel['id']
-        
-        print(f"[YouTube Auth] Successfully authenticated channel: {channel_name}")
-        
-        # Encrypt and return
         encrypted_creds = encrypt_data(json.dumps(creds_dict))
         return {
             'credentials': encrypted_creds,
@@ -120,7 +73,6 @@ def validate_and_return_credentials(creds_dict, account_name):
                 'id': channel['id']
             }
         }
-        
     except Exception as e:
         raise Exception(f"Credential validation failed: {str(e)}")
 

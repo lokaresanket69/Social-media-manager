@@ -22,6 +22,7 @@ from pinterest_api import post_to_pinterest
 from medium_api import post_to_medium
 from linkedin_api import post_to_linkedin
 from reddit_api import post_to_reddit
+from youtube_auth_simple import get_youtube_auth_url, exchange_code_and_store_credentials
 
 # --- App Setup ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -175,6 +176,60 @@ def api_accounts():
                     name = result['name']  # Update name with channel info
                 except Exception as e:
                     return jsonify({'error': f'YouTube authentication failed: {str(e)}'}), 400
+        # Special handling for Reddit: process and validate credentials from form fields
+        if platform_id:
+            c = conn.cursor()
+            platform = c.execute('SELECT name FROM platforms WHERE id=?', (platform_id,)).fetchone()
+            if platform and platform['name'] == 'reddit':
+                # Accept credentials as dict or string
+                import json
+                if isinstance(credentials, str):
+                    try:
+                        credentials = json.loads(credentials)
+                    except Exception:
+                        # If not JSON, treat as form fields
+                        credentials = {key: value for key, value in data.items() if key not in ['platform_id', 'account_name']}
+                # Required fields
+                required = ['client_id', 'client_secret', 'username', 'password']
+                missing = [k for k in required if not credentials.get(k)]
+                if missing:
+                    return jsonify({'error': f'Missing Reddit credentials: {", ".join(missing)}'}), 400
+                # Set default user_agent if not provided
+                if not credentials.get('user_agent'):
+                    credentials['user_agent'] = f'script:{credentials["username"]}:v1.0 (by /u/{credentials["username"]})'
+                # Set default subreddit if not provided
+                if not credentials.get('subreddit'):
+                    credentials['subreddit'] = 'test'
+                # Test credentials before saving
+                try:
+                    from reddit_api import test_reddit_connection
+                    if not test_reddit_connection(credentials):
+                        return jsonify({'error': 'Reddit authentication failed: Invalid credentials or subreddit access.'}), 400
+                except Exception as e:
+                    return jsonify({'error': f'Reddit authentication failed: {str(e)}'}), 400
+        # Special handling for Twitter: process and validate credentials from form fields
+        if platform_id:
+            c = conn.cursor()
+            platform = c.execute('SELECT name FROM platforms WHERE id=?', (platform_id,)).fetchone()
+            if platform and platform['name'] == 'twitter':
+                import json
+                if isinstance(credentials, str):
+                    try:
+                        credentials = json.loads(credentials)
+                    except Exception:
+                        credentials = {key: value for key, value in data.items() if key not in ['platform_id', 'account_name']}
+                # Only accept api_key, api_key_secret, access_token, access_token_secret
+                required = ['api_key', 'api_key_secret', 'access_token', 'access_token_secret']
+                missing = [k for k in required if not credentials.get(k)]
+                if missing:
+                    return jsonify({'error': f'Missing Twitter credentials: {", ".join(missing)}. Please provide all four keys as shown in the form.'}), 400
+                # Test credentials before saving
+                try:
+                    from twitter_api import test_twitter_connection
+                    if not test_twitter_connection(credentials):
+                        return jsonify({'error': 'Twitter authentication failed: Invalid credentials or permissions. Please double-check your keys and try again.'}), 400
+                except Exception as e:
+                    return jsonify({'error': f'Twitter authentication failed: {str(e)}'}), 400
         # Credential validation logic
         try:
             # Map platform_id to platform name
@@ -197,6 +252,14 @@ def api_accounts():
                 if platform_name == 'youtube':
                     # YouTube credentials are already validated in the processing step above
                     pass  # Skip validation since we already processed and validated
+                elif platform_name == 'twitter':
+                    # For Twitter, only test credentials, do not require media file
+                    try:
+                        from twitter_api import test_twitter_connection
+                        if not test_twitter_connection(credentials):
+                            return jsonify({'error': 'Credential validation failed: Twitter credentials are invalid. Please check your keys and try again.'}), 400
+                    except Exception as e:
+                        return jsonify({'error': f'Credential validation failed: {str(e)}'}), 400
                 else:
                     try:
                         api_func({'credentials': encrypt_data(json.dumps(credentials))}, dummy_content, BASE_DIR)
@@ -258,18 +321,22 @@ def api_content():
         if not account:
             return jsonify({'error': 'Invalid account'}), 400
             
-        # Save media file
-        if 'media' not in request.files:
-            return jsonify({'error': 'No media file provided'}), 400
-        file = request.files['media']
-        uploads_dir = os.path.join(BASE_DIR, 'uploads')
-        if not os.path.exists(uploads_dir):
-            os.makedirs(uploads_dir)
-        media_path = os.path.join('uploads', f"{file.filename}")
-        try:
-            file.save(os.path.join(BASE_DIR, media_path))
-        except Exception as e:
-            return jsonify({'error': f'Failed to save file: {str(e)}'}), 500
+        # Save media file (optional)
+        media_path = None
+        if 'media' in request.files and request.files['media'] and request.files['media'].filename:
+            file = request.files['media']
+            uploads_dir = os.path.join(BASE_DIR, 'uploads')
+            # Always ensure uploads directory exists (robust and reliable)
+            try:
+                os.makedirs(uploads_dir, exist_ok=True)
+            except Exception as e:
+                return jsonify({'error': f'Failed to create uploads directory: {str(e)}'}), 500
+            media_path = os.path.join('uploads', f"{file.filename}")
+            try:
+                file.save(os.path.join(BASE_DIR, media_path))
+            except Exception as e:
+                return jsonify({'error': f'Failed to save file: {str(e)}'}), 500
+        # If no media, media_path remains None
             
         try:
             c = conn.cursor()
@@ -277,7 +344,7 @@ def api_content():
                          media_path, schedule_time, created_at) 
                          VALUES (?, ?, ?, ?, ?, ?, ?)''',
                       (account_id, title, description, hashtags, 
-                       media_path, schedule_time_utc_iso, created_at))
+                       media_path if media_path else '', schedule_time_utc_iso, created_at))
             conn.commit()
             conn.close()
             flash('Content scheduled successfully!', 'success')
@@ -530,6 +597,38 @@ def linkedin_post_example():
         return f"Post successful! LinkedIn response: {resp.json()}"
     else:
         return f"Failed to post: {resp.status_code} {resp.text}", 400
+
+@app.route('/youtube/authorize')
+def youtube_authorize():
+    """
+    Redirect user to Google's OAuth 2.0 server for YouTube authentication.
+    Optionally, pass ?account_name=... as a query param.
+    """
+    account_name = request.args.get('account_name', 'YouTube User')
+    # Store account_name in session for use after callback
+    session['pending_youtube_account_name'] = account_name
+    auth_url = get_youtube_auth_url()
+    return redirect(auth_url)
+
+@app.route('/youtube/oauth2callback')
+def youtube_oauth2callback():
+    """
+    Handle Google's redirect, exchange code for tokens, validate, and store credentials.
+    """
+    error = request.args.get('error')
+    if error:
+        return f"YouTube OAuth error: {error}", 400
+    code = request.args.get('code')
+    if not code:
+        return "Missing code in callback.", 400
+    account_name = session.pop('pending_youtube_account_name', 'YouTube User')
+    try:
+        result = exchange_code_and_store_credentials(code, account_name)
+        # Here you should save result['credentials'] and result['name'] to your DB as needed.
+        # For demo, just show success and channel info.
+        return f"YouTube authentication successful!<br>Channel: {result['channel_info']['name']}<br>Account Name: {result['name']}<br><br>Credentials (encrypted):<br><pre>{result['credentials']}</pre>"
+    except Exception as e:
+        return f"YouTube authentication failed: {str(e)}", 400
 
 @app.route('/delete/account/<int:account_id>', methods=['POST'])
 def delete_account(account_id):
