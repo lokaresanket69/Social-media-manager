@@ -138,6 +138,12 @@
                             <input type="password" class="form-control" id="instaPassword" name="password">
                         </div>
                     </div>
+                    <div id="youtubeFields" style="display:none;">
+                        <div class="mb-3 text-center">
+                            <a href="/youtube/authorize" class="btn btn-danger w-100">Connect YouTube</a>
+                            <div class="form-text mt-2">Connect your YouTube account securely via OAuth. File uploads are not supported for YouTube.</div>
+                        </div>
+                    </div>
                     <div id="otherPlatformFields">
                         <div class="mb-3">
                             <label for="credential" class="form-label">Credentials</label>
@@ -155,17 +161,24 @@
             document.addEventListener('DOMContentLoaded', function() {
                 var platformSelect = document.getElementById('platform');
                 var instaFields = document.getElementById('instagramFields');
+                var youtubeFields = document.getElementById('youtubeFields');
                 var otherFields = document.getElementById('otherPlatformFields');
                 if (platformSelect) {
                     platformSelect.addEventListener('change', function() {
                         var selected = platformSelect.options[platformSelect.selectedIndex];
                         if (selected && selected.getAttribute('data-platform-name') === 'instagram') {
                             instaFields.style.display = '';
+                            youtubeFields.style.display = 'none';
                             otherFields.style.display = 'none';
                             document.getElementById('instaUsername').required = true;
                             document.getElementById('instaPassword').required = true;
+                        } else if (selected && selected.getAttribute('data-platform-name') === 'youtube') {
+                            instaFields.style.display = 'none';
+                            youtubeFields.style.display = '';
+                            otherFields.style.display = 'none';
                         } else {
                             instaFields.style.display = 'none';
+                            youtubeFields.style.display = 'none';
                             otherFields.style.display = '';
                             document.getElementById('instaUsername').required = false;
                             document.getElementById('instaPassword').required = false;

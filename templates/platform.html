@@ -199,6 +199,11 @@
                         <label for="twitterAccessTokenSecret" class="form-label">Access Token Secret</label>
                         <input type="text" class="form-control" id="twitterAccessTokenSecret" name="access_token_secret" required>
                     </div>
+                    {% elif platform.name == 'youtube' %}
+                    <div class="mb-3 text-center">
+                        <a href="/youtube/authorize" class="btn btn-danger w-100">Connect YouTube</a>
+                        <div class="form-text mt-2">Connect your YouTube account securely via OAuth. File uploads are not supported for YouTube.</div>
+                    </div>
                     {% else %}
                     <div class="mb-3">
                         <label for="credential" class="form-label">Credentials</label>

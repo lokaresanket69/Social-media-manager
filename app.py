@@ -385,6 +385,17 @@ LINKEDIN_REDIRECT_URI = os.getenv("LINKEDIN_REDIRECT_URI")  # Use .env value, no
 linkedin_person_urns = {}
 linkedin_post_tokens = {}
 
+@app.route("/linkedin/auth")
+def linkedin_auth():
+    scope = "openid profile email w_member_social"
+    auth_url = (
+        "https://www.linkedin.com/oauth/v2/authorization"
+        f"?response_type=code&client_id={LINKEDIN_CLIENT_ID}"
+        f"&redirect_uri={LINKEDIN_REDIRECT_URI}/oidc"
+        f"&scope={scope.replace(' ', '%20')}"
+    )
+    return redirect(auth_url)
+
 @app.route("/linkedin/auth-oidc")
 def linkedin_auth_oidc():
     scope = "openid profile email"
