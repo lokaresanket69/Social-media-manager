@@ -154,6 +154,51 @@
                         <a href="/linkedin/auth" class="btn btn-primary w-100">Connect LinkedIn</a>
                         <div class="form-text mt-2">Connect your LinkedIn account securely via OAuth. No file or token needed.</div>
                     </div>
+                    {% elif platform.name == 'reddit' %}
+                    <div class="mb-3">
+                        <label for="redditClientId" class="form-label">Client ID</label>
+                        <input type="text" class="form-control" id="redditClientId" name="client_id" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="redditClientSecret" class="form-label">Client Secret</label>
+                        <input type="text" class="form-control" id="redditClientSecret" name="client_secret" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="redditUsername" class="form-label">Reddit Username</label>
+                        <input type="text" class="form-control" id="redditUsername" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="redditPassword" class="form-label">Reddit Password</label>
+                        <input type="password" class="form-control" id="redditPassword" name="password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="redditUserAgent" class="form-label">User Agent <span class="text-muted">(optional)</span></label>
+                        <input type="text" class="form-control" id="redditUserAgent" name="user_agent" placeholder="script:mybot:v1.0 (by /u/yourusername)">
+                    </div>
+                    <div class="mb-3">
+                        <label for="redditSubreddit" class="form-label">Subreddit <span class="text-muted">(optional, default: test)</span>
+                            <span tabindex="0" data-bs-toggle="tooltip" title="A subreddit is a community on Reddit. Enter the name only, e.g., 'technology' for r/technology. See "><a href="https://www.reddit.com/subreddits/" target="_blank">find a subreddit</a></span>
+                        </label>
+                        <input type="text" class="form-control" id="redditSubreddit" name="subreddit" placeholder="test">
+                        <div class="form-text">A subreddit is a community on Reddit. Enter the name only, e.g., <b>technology</b> for r/technology. <a href="https://www.reddit.com/subreddits/" target="_blank">Find a subreddit</a>.</div>
+                    </div>
+                    {% elif platform.name == 'twitter' %}
+                    <div class="mb-3">
+                        <label for="twitterApiKey" class="form-label">API Key</label>
+                        <input type="text" class="form-control" id="twitterApiKey" name="api_key" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="twitterApiKeySecret" class="form-label">API Key Secret</label>
+                        <input type="text" class="form-control" id="twitterApiKeySecret" name="api_key_secret" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="twitterAccessToken" class="form-label">Access Token</label>
+                        <input type="text" class="form-control" id="twitterAccessToken" name="access_token" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="twitterAccessTokenSecret" class="form-label">Access Token Secret</label>
+                        <input type="text" class="form-control" id="twitterAccessTokenSecret" name="access_token_secret" required>
+                    </div>
                     {% else %}
                     <div class="mb-3">
                         <label for="credential" class="form-label">Credentials</label>
@@ -196,6 +241,15 @@
                             {% endfor %}
                         </select>
                     </div>
+                    {% if platform.name == 'reddit' %}
+                    <div class="mb-3">
+                        <label for="postSubreddit" class="form-label">Subreddit <span class="text-muted">(required)</span>
+                            <span tabindex="0" data-bs-toggle="tooltip" title="A subreddit is a community on Reddit. Enter the name only, e.g., 'technology' for r/technology. See "><a href="https://www.reddit.com/subreddits/" target="_blank">find a subreddit</a></span>
+                        </label>
+                        <input type="text" class="form-control" id="postSubreddit" name="subreddit" placeholder="e.g. test" required>
+                        <div class="form-text">A subreddit is a community on Reddit. Enter the name only, e.g., <b>technology</b> for r/technology. <a href="https://www.reddit.com/subreddits/" target="_blank">Find a subreddit</a>.</div>
+                    </div>
+                    {% endif %}
                     <div class="mb-3">
                         <label for="postTitle" class="form-label">Title</label>
                         <input type="text" class="form-control" id="postTitle" name="title" required>

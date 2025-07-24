@@ -39,9 +39,14 @@ def process_scheduled_posts(get_db, platform_apis, base_dir):
                 platform_name = platform['name']
                 api_function = platform_apis.get(platform_name)
 
+                # Convert all sqlite3.Row objects to dicts for robust access
+                account_dict = dict(account)
+                post_dict = dict(post)
+                platform_dict = dict(platform)
+
                 if api_function:
                     print(f"[Scheduler] Calling API for {platform_name} for post ID {post['id']}")
-                    api_function(account, post, base_dir)
+                    api_function(account_dict, post_dict, base_dir)
                     conn.execute("UPDATE content SET status='posted', error=NULL WHERE id=?", (post['id'],))
                     print(f"[Scheduler] Post ID {post['id']} successfully posted.")
                 else:

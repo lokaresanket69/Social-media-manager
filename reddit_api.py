@@ -51,15 +51,20 @@ def post_to_reddit(account, content, base_dir):
         # Combine description and hashtags
         post_text = f"{description}\n\n{hashtags}".strip()
         
-        # Get subreddit (default to 'test' if not specified)
-        subreddit_name = credentials.get('subreddit', 'test')
+        # Get subreddit (prefer from content, fallback to credentials, then 'test')
+        subreddit_name = content.get('subreddit') or credentials.get('subreddit') or 'test'
         subreddit = reddit.subreddit(subreddit_name)
-        
-        # Check if subreddit exists and is accessible
+
+        # Validate subreddit before posting
         try:
-            subreddit.id
+            # Check if subreddit exists and is not banned/quarantined
+            subreddit.id  # Will raise if subreddit does not exist
+            # Check if user can post (try to fetch submission rules)
+            rules = subreddit.rules()
+            if not rules:
+                raise Exception(f"Subreddit r/{subreddit_name} exists but posting rules could not be fetched.")
         except Exception as e:
-            raise Exception(f"Cannot access subreddit '{subreddit_name}': {e}")
+            raise Exception(f"Subreddit validation failed for '{subreddit_name}': {e}")
         
         # Handle media if provided
         media_path_relative = content.get('media_path')
