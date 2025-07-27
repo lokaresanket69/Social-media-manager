@@ -32,6 +32,31 @@ app.secret_key = os.getenv('SECRET_KEY', os.urandom(24))
 CORS(app)
 DB_PATH = os.path.join(BASE_DIR, 'social_media_automation.db')
 
+# --- LinkedIn Redirect URI Selection ---
+LINKEDIN_REDIRECT_URI_LOCAL = os.getenv('LINKEDIN_REDIRECT_URI_LOCAL', 'http://localhost:5000/linkedin/callback')
+LINKEDIN_REDIRECT_URI_PROD = os.getenv('LINKEDIN_REDIRECT_URI_PROD', 'https://social-media-manager-5j5s.onrender.com/linkedin/callback')
+def get_linkedin_redirect_uri(request_path=''):
+    """
+    Always return the exact registered LinkedIn redirect URI for the environment and flow.
+    """
+    from flask import request
+    # Localhost for dev
+    if request.host.startswith('localhost') or request.host.startswith('127.0.0.1'):
+        if request_path == '/oidc':
+            return 'http://localhost:5000/linkedin/callback/oidc'
+        elif request_path == '/post':
+            return 'http://localhost:5000/linkedin/callback/post'
+        else:
+            return 'http://localhost:5000/linkedin/callback'
+    # Production (Render)
+    if request_path == '/oidc':
+        return 'https://social-media-manager-5j5s.onrender.com/linkedin/callback/oidc'
+    elif request_path == '/post':
+        return 'https://social-media-manager-5j5s.onrender.com/linkedin/callback/post'
+    else:
+        return 'https://social-media-manager-5j5s.onrender.com/linkedin/callback'
+
+
 # --- Database Functions ---
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -443,13 +468,12 @@ def linkedin_auth_oidc():
     
     # Ensure the redirect URI is properly URL-encoded
     from urllib.parse import quote
-    encoded_redirect_uri = quote(LINKEDIN_REDIRECT_URI, safe='')
-    
+    linkedin_redirect_uri = get_linkedin_redirect_uri('/oidc')
     auth_url = (
         "https://www.linkedin.com/oauth/v2/authorization"
         f"?response_type=code"
         f"&client_id={LINKEDIN_CLIENT_ID}"
-        f"&redirect_uri={LINKEDIN_REDIRECT_URI}"  # Removed /oidc from here as it's already in the REDIRECT_URI
+        f"&redirect_uri={linkedin_redirect_uri}"
         f"&scope={quote(scope_param, safe='')}"
         f"&state={state}"
     )
@@ -481,10 +505,11 @@ def linkedin_callback_oidc():
     try:
         # Exchange authorization code for access token
         token_url = "https://www.linkedin.com/oauth/v2/accessToken"
+        linkedin_redirect_uri = get_linkedin_redirect_uri('/oidc')
         data = {
             "grant_type": "authorization_code",
             "code": code,
-            "redirect_uri": LINKEDIN_REDIRECT_URI,
+            "redirect_uri": linkedin_redirect_uri,
             "client_id": LINKEDIN_CLIENT_ID,
             "client_secret": LINKEDIN_CLIENT_SECRET,
         }
@@ -676,12 +701,13 @@ def linkedin_auth_post():
     if not email:
         return "Missing email. Please authenticate with OIDC first.", 400
     scope = "r_liteprofile w_member_social"
+    linkedin_redirect_uri = get_linkedin_redirect_uri('/post')
     auth_url = (
         "https://www.linkedin.com/oauth/v2/authorization"
-        f"?response_type=code&client_id={LINKEDIN_CLIENT_ID}"
-        f"&redirect_uri={LINKEDIN_REDIRECT_URI}/post"
-        f"&scope={scope.replace(' ', '%20')}"
-        f"&state={email}"
+        f"?response_type=code\u0026client_id={LINKEDIN_CLIENT_ID}"
+        f"\u0026redirect_uri={linkedin_redirect_uri}"
+        f"\u0026scope={scope.replace(' ', '%20')}"
+        f"\u0026state={email}"
     )
     return f'<a href="{auth_url}"><button>Connect LinkedIn for Posting</button></a>'
 
