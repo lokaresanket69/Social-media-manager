@@ -101,89 +101,8 @@ def api_accounts():
             else:
                 return jsonify({'error': 'Instagram username and password are required.'}), 400
         elif platform_name == 'youtube':
-            # Handle uploaded credential file for YouTube
-            if 'credential' in request.files and request.files['credential'].filename:
-                cred_file = request.files['credential']
-                try:
-                    temp_path = os.path.join(BASE_DIR, 'uploads', f"temp_youtube_{name}.json")
-                    os.makedirs(os.path.dirname(temp_path), exist_ok=True)
-                    cred_file.save(temp_path)
-                    file_size = os.path.getsize(temp_path)
-                    print(f"[DEBUG] Saved uploaded file to: {temp_path} (size: {file_size} bytes)")
-                    with open(temp_path, 'r', encoding='utf-8') as f:
-                        file_contents = f.read()
-                    print(f"[DEBUG] File contents (first 500 chars): {file_contents[:500]}")
-                    if not file_contents.strip():
-                        print(f"[ERROR] Uploaded YouTube credential file is empty: {temp_path}")
-                        os.remove(temp_path)
-                        return jsonify({'error': 'Uploaded YouTube credential file is empty.'}), 400
-                    try:
-                        creds_data = json.loads(file_contents)
-                    except Exception as e:
-                        print(f"[ERROR] Uploaded file is not valid JSON: {e}")
-                        os.remove(temp_path)
-                        return jsonify({'error': f'Uploaded file is not valid JSON: {e}'}), 400
-                    # Accept Google OAuth files with 'installed', 'web', or top-level keys
-                    if 'installed' in creds_data:
-                        creds_data = creds_data['installed']
-                    elif 'web' in creds_data:
-                        creds_data = creds_data['web']
-                    # If refresh_token is present, just validate and save
-                    if 'refresh_token' in creds_data:
-                        with open(temp_path, 'w', encoding='utf-8') as f:
-                            json.dump(creds_data, f)
-                        result = process_youtube_credentials(temp_path, name)
-                        c = conn.cursor()
-                        platform = c.execute('SELECT id FROM platforms WHERE name=?', ('youtube',)).fetchone()
-                        if not platform:
-                            os.remove(temp_path)
-                            return jsonify({'error': 'YouTube platform not found.'}), 400
-                        platform_id = platform['id']
-                        encrypted_credentials = result['credentials']
-                        c.execute('INSERT INTO accounts (platform_id, name, credentials, created_at) VALUES (?, ?, ?, ?)',
-                                  (platform_id, result['name'], encrypted_credentials, datetime.utcnow().isoformat()))
-                        conn.commit()
-                        os.remove(temp_path)
-                        flash(f"YouTube account '{result['name']}' created successfully.", "success")
-                        return jsonify({'success': True, 'channel_info': result['channel_info']})
-                    # If no refresh_token, start OAuth flow automatically
-                    else:
-                        from google_auth_oauthlib.flow import InstalledAppFlow
-                        SCOPES = [
-                            'https://www.googleapis.com/auth/youtube.upload',
-                            'https://www.googleapis.com/auth/youtube'
-                        ]
-                        flow = InstalledAppFlow.from_client_secrets_file(temp_path, SCOPES)
-                        creds = flow.run_local_server(port=0)
-                        creds_dict = {
-                            'client_id': creds.client_id,
-                            'client_secret': creds.client_secret,
-                            'refresh_token': creds.refresh_token,
-                            'token_uri': creds.token_uri
-                        }
-                        # Process creds_dict directly (do not write/read file)
-                        from youtube_auth import validate_and_return_credentials
-                        result = validate_and_return_credentials(creds_dict, name)
-                        c = conn.cursor()
-                        platform = c.execute('SELECT id FROM platforms WHERE name=?', ('youtube',)).fetchone()
-                        if not platform:
-                            os.remove(temp_path)
-                            return jsonify({'error': 'YouTube platform not found.'}), 400
-                        platform_id = platform['id']
-                        encrypted_credentials = result['credentials']
-                        c.execute('INSERT INTO accounts (platform_id, name, credentials, created_at) VALUES (?, ?, ?, ?)',
-                                  (platform_id, result['name'], encrypted_credentials, datetime.utcnow().isoformat()))
-                        conn.commit()
-                        os.remove(temp_path)
-                        flash(f"YouTube account '{result['name']}' created successfully.", "success")
-                        return jsonify({'success': True, 'channel_info': result['channel_info']})
-                except Exception as e:
-                    print(f"[ERROR] Exception in YouTube credential upload: {e}")
-                    if 'temp_path' in locals() and os.path.exists(temp_path):
-                        os.remove(temp_path)
-                    return jsonify({'error': f'Failed to add YouTube account: {e}'}), 400
-            else:
-                return jsonify({'error': 'YouTube credential file is required.'}), 400
+            # Adding YouTube accounts must be done via the web-based OAuth flow.
+            return jsonify({'error': 'To add a YouTube account, please use the web-based OAuth flow via /youtube/authorize.'}), 400
         else:
             # Handle uploaded credential file
             if 'credential' in request.files and request.files['credential'].filename:
@@ -649,6 +568,9 @@ def linkedin_post_example():
         return f"Post successful! LinkedIn response: {resp.json()}"
     else:
         return f"Failed to post: {resp.status_code} {resp.text}", 400
+
+# --- YouTube OAuth Web Flow ---
+from youtube_auth_simple import get_youtube_auth_url, exchange_code_and_store_credentials
 
 @app.route('/youtube/authorize')
 def youtube_authorize():
