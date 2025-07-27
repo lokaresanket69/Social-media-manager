@@ -149,7 +149,10 @@ def api_accounts():
                     # If no refresh_token, start OAuth flow automatically
                     else:
                         from google_auth_oauthlib.flow import InstalledAppFlow
-                        SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+                        SCOPES = [
+                            'https://www.googleapis.com/auth/youtube.upload',
+                            'https://www.googleapis.com/auth/youtube'
+                        ]
                         flow = InstalledAppFlow.from_client_secrets_file(temp_path, SCOPES)
                         creds = flow.run_local_server(port=0)
                         creds_dict = {
@@ -504,33 +507,36 @@ def linkedin_callback_oidc():
         "client_id": LINKEDIN_CLIENT_ID,
         "client_secret": LINKEDIN_CLIENT_SECRET,
     }
-    resp = requests.post(token_url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
-    if resp.status_code != 200:
-        return f"Failed to get OIDC access token: {resp.text}", 400
-    token_data = resp.json()
-    access_token = token_data.get("access_token")
-    if not access_token:
-        return f"No access token in response: {token_data}", 400
-    # Fetch user info from /userinfo endpoint
-    userinfo_resp = requests.get(
-        "https://api.linkedin.com/v2/userinfo",
-        headers={"Authorization": f"Bearer {access_token}"}
-    )
-    if userinfo_resp.status_code != 200:
-        return f"Failed to fetch LinkedIn userinfo: {userinfo_resp.text}", 400
-    userinfo = userinfo_resp.json()
-    person_urn = f"urn:li:person:{userinfo['sub']}"
-    email = userinfo.get('email')
-    name = userinfo.get('name', email)
-    # Store info in session for registration
-    session['linkedin_account'] = {
-        'access_token': access_token,
-        'person_urn': person_urn,
-        'email': email,
-        'name': name
-    }
-    # Redirect to registration endpoint
-    return redirect(url_for('linkedin_register_account'))
+    try:
+        resp = requests.post(token_url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+        if resp.status_code != 200:
+            return f"Failed to get OIDC access token: {resp.text}", 400
+        token_data = resp.json()
+        access_token = token_data.get("access_token")
+        if not access_token:
+            return f"No access token in response: {token_data}", 400
+        # Fetch user info from /userinfo endpoint
+        userinfo_resp = requests.get(
+            "https://api.linkedin.com/v2/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        if userinfo_resp.status_code != 200:
+            return f"Failed to fetch LinkedIn userinfo: {userinfo_resp.text}", 400
+        userinfo = userinfo_resp.json()
+        person_urn = f"urn:li:person:{userinfo['sub']}"
+        email = userinfo.get('email')
+        name = userinfo.get('name', email)
+        # Store info in session for registration
+        session['linkedin_account'] = {
+            'access_token': access_token,
+            'person_urn': person_urn,
+            'email': email,
+            'name': name
+        }
+        # Redirect to registration endpoint
+        return redirect(url_for('linkedin_register_account'))
+    except Exception as e:
+        return f"LinkedIn callback processing failed: {str(e)}", 500
 
 @app.route("/linkedin/register-account")
 def linkedin_register_account():

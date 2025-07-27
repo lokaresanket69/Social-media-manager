@@ -8,7 +8,7 @@ if defined _OLD_CODEPAGE (
     "%SystemRoot%\System32\chcp.com" 65001 > nul
 )
 
-set VIRTUAL_ENV=C:\Users\sanke\Downloads\social media\Youtube automation\venv312
+set VIRTUAL_ENV=C:\Users\Tejas\OneDrive\Desktop\Youtube automation\venv312
 
 if not defined PROMPT set PROMPT=$P$G
 

@@ -7,7 +7,10 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from security import encrypt_data
 
-SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+SCOPES = [
+    'https://www.googleapis.com/auth/youtube.upload',
+    'https://www.googleapis.com/auth/youtube'
+]
 
 def process_youtube_credentials(credentials_json, account_name):
     """
