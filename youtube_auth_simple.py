@@ -12,27 +12,28 @@ SCOPES = [
 ]
 
 # Path to your Google OAuth client secrets file (web application type)
-CLIENT_SECRETS_FILE = os.getenv('YOUTUBE_CLIENT_SECRETS', 'client_secret.json')
+CLIENT_SECRETS_FILE = os.getenv('GOOGLE_CLIENT_SECRETS', 'client_secret.json')
 REDIRECT_URI = os.getenv('YOUTUBE_REDIRECT_URI', 'https://social-media-manager-5j5s.onrender.com/youtube/oauth2callback')
 
 # 1. Generate the Google OAuth URL for user consent
-
 def get_youtube_auth_url(state=None):
-    flow = Flow.from_client_secrets_file(
-        CLIENT_SECRETS_FILE,
-        scopes=SCOPES,
-        redirect_uri=REDIRECT_URI
-    )
-    auth_url, _ = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true',
-        prompt='consent',
-        state=state
-    )
-    return auth_url
+    try:
+        flow = Flow.from_client_secrets_file(
+            CLIENT_SECRETS_FILE,
+            scopes=SCOPES,
+            redirect_uri=REDIRECT_URI
+        )
+        auth_url, _ = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true',
+            prompt='consent',
+            state=state
+        )
+        return auth_url
+    except FileNotFoundError:
+        raise Exception(f"Google OAuth client secrets file not found at '{CLIENT_SECRETS_FILE}'. Please upload it to your server and set the GOOGLE_CLIENT_SECRETS environment variable if needed.")
 
 # 2. Exchange the authorization code for tokens and validate
-
 def exchange_code_and_store_credentials(code, account_name):
     flow = Flow.from_client_secrets_file(
         CLIENT_SECRETS_FILE,
@@ -52,7 +53,6 @@ def exchange_code_and_store_credentials(code, account_name):
     return validate_and_return_credentials(creds_dict, account_name)
 
 # 3. Validate credentials and return encrypted result
-
 def validate_and_return_credentials(creds_dict, account_name):
     try:
         creds = Credentials.from_authorized_user_info(creds_dict, SCOPES)
