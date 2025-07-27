@@ -455,8 +455,7 @@ def linkedin_auth_oidc():
         "profile",
         "email",
         "w_member_social",  # Required for posting content
-        "r_liteprofile",    # Required for basic profile access
-        "w_organization_social"  # Additional permission that might be needed
+        "r_liteprofile"    # Required for basic profile access
     ]
     scope_param = " ".join(scopes)
     
