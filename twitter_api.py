@@ -67,7 +67,7 @@ def post_to_twitter(account, content, base_dir):
         else:
             response = client.create_tweet(text=tweet_text)
         logging.info(f"[Twitter] Tweet posted successfully: {response.data['id']}")
-        return response.data
+        return True
     except Exception as e:
         logging.error(f"[Twitter] Error posting tweet: {e}")
         raise Exception("Error posting tweet. Please try again later or check your content for issues.")

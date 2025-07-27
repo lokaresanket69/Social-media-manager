@@ -69,11 +69,8 @@ def process_scheduled_posts(get_db, platform_apis, base_dir):
 
                 if api_function:
                     print(f"[Scheduler] Calling API for {platform_name} for post ID {post['id']}")
-                    result = api_function(account_dict, post_dict, base_dir)
-                    if result is True or result is None:
-                        conn.execute("UPDATE content SET status='posted', error=NULL WHERE id=?", (post['id'],))
-                    else:
-                        raise Exception(f"API function returned unsuccessful result: {result}")
+                    api_function(account_dict, post_dict, base_dir)
+                    conn.execute("UPDATE content SET status='posted', error=NULL WHERE id=?", (post['id'],))
                     print(f"[Scheduler] Post ID {post['id']} successfully posted.")
                 else:
                     raise Exception(f"No API function configured for platform: {platform_name}")
