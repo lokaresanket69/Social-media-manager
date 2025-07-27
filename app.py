@@ -267,10 +267,12 @@ def api_content():
         schedule_time_utc_iso = None
         if schedule_time_str:
             try:
-                # Parse the naive local time string
-                local_time = isoparse(schedule_time_str)
-                # Assume it's in the local timezone and convert to UTC
-                utc_time = local_time.replace(tzinfo=tzlocal()).astimezone(timezone.utc)
+                # Parse schedule_time string
+                dt = isoparse(schedule_time_str)
+                # If timezone info is missing, assume browser local tz (server may be UTC)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=tzlocal())
+                utc_time = dt.astimezone(timezone.utc)
                 schedule_time_utc_iso = utc_time.isoformat()
             except ValueError as e:
                 print(f"Error parsing schedule time '{schedule_time_str}': {e}")

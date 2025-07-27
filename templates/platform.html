@@ -288,7 +288,8 @@
                     </div>
                     <div class="mb-3">
                         <label for="postSchedule" class="form-label">Schedule Time</label>
-                        <input type="datetime-local" class="form-control" id="postSchedule" name="schedule_time">
+                        <input type="datetime-local" class="form-control" id="postSchedule">
+<input type="hidden" id="scheduleTimeIso" name="schedule_time">
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -420,7 +421,15 @@
                 postMedia.classList.remove('is-invalid');
             }
 
-            if (!isValid) {
+            if (isValid) {
+                // Convert schedule_time to ISO UTC string so backend receives timezone-aware value
+                var schedInput = document.getElementById('postSchedule');
+                var hiddenIso = document.getElementById('scheduleTimeIso');
+                if (schedInput && hiddenIso && schedInput.value) {
+                    var localDate = new Date(schedInput.value);
+                    hiddenIso.value = localDate.toISOString();
+                }
+            } else {
                 event.preventDefault(); // Prevent form submission if validation fails
                 event.stopPropagation();
             }

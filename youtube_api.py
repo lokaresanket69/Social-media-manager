@@ -55,23 +55,21 @@ def post_to_youtube(account, content, base_dir):
         )
         
         response = request.execute()
-        print(f"[YouTube API] Video uploaded successfully: {response}")
-        return response
+        print(f"[YouTube API] Video upload response: {response}")
+        # Basic validation: response should contain a video id
+        video_id = response.get('id') if isinstance(response, dict) else None
+        if not video_id:
+            raise Exception(f"YouTube API returned unexpected response without video ID: {response}")
+        return True
 
     except Exception as e:
-        # If the credentials fail, it's good practice to log the specific error
-        # without exposing the credentials themselves.
-        print(f"[YouTube API] An error occurred during the API call: {e}")
-        raise Exception(f"YouTube API Error: {e}")
-
-    except Exception as e:
-        print(f"[YouTube API] An error occurred during YouTube API call: {e}")
-        # Update status to error in DB directly
+        # Update status to error in DB directly and re-raise so scheduler catches it
+        print(f"[YouTube API] Upload failed: {e}")
         try:
-            conn = sqlite3.connect(os.path.join(base_dir, 'social_media_automation.db')) # Use base_dir for DB path
+            conn = sqlite3.connect(os.path.join(base_dir, 'social_media_automation.db'))
             conn.execute("UPDATE content SET status='error', error=? WHERE id=?", (str(e), content['id']))
             conn.commit()
             conn.close()
         except Exception as db_e:
-            print(f"[YouTube API] Error updating DB status after API error: {db_e}")
-        raise e # Re-raise the exception so the scheduler can catch it 
+            print(f"[YouTube API] Error updating DB after failure: {db_e}")
+        raise

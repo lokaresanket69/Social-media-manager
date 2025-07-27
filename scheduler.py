@@ -16,6 +16,8 @@ def process_scheduled_posts(get_db, platform_apis, base_dir):
         due_posts = []
         now_utc = datetime.now(timezone.utc)
         for row in pending_rows:
+            # Debug: show original schedule_time string
+            print(f"[Scheduler] Evaluating post ID {row['id']} with schedule_time='{row['schedule_time']}'")
             schedule_time_str = row['schedule_time']
             if not schedule_time_str:
                 # No schedule specified – post immediately
@@ -27,6 +29,7 @@ def process_scheduled_posts(get_db, platform_apis, base_dir):
                 if sch_dt.tzinfo is None:
                     sch_dt = sch_dt.replace(tzinfo=timezone.utc)
                 sch_dt_utc = sch_dt.astimezone(timezone.utc)
+                print(f"[Scheduler] Parsed schedule_time UTC: {sch_dt_utc.isoformat()}, Now UTC: {now_utc.isoformat()}")
                 if sch_dt_utc <= now_utc:
                     due_posts.append(row)
             except Exception as e:
@@ -66,8 +69,11 @@ def process_scheduled_posts(get_db, platform_apis, base_dir):
 
                 if api_function:
                     print(f"[Scheduler] Calling API for {platform_name} for post ID {post['id']}")
-                    api_function(account_dict, post_dict, base_dir)
-                    conn.execute("UPDATE content SET status='posted', error=NULL WHERE id=?", (post['id'],))
+                    result = api_function(account_dict, post_dict, base_dir)
+                    if result is True or result is None:
+                        conn.execute("UPDATE content SET status='posted', error=NULL WHERE id=?", (post['id'],))
+                    else:
+                        raise Exception(f"API function returned unsuccessful result: {result}")
                     print(f"[Scheduler] Post ID {post['id']} successfully posted.")
                 else:
                     raise Exception(f"No API function configured for platform: {platform_name}")
