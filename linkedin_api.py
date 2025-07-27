@@ -9,16 +9,96 @@ load_dotenv()
 
 class LinkedInAPI:
     def __init__(self, access_token, user_id):
-        if not all([access_token, user_id]):
-            raise ValueError("LinkedIn access token and user ID are required.")
         self.access_token = access_token
         self.user_id = user_id
-        self.base_url = 'https://api.linkedin.com/v2'
+        self.base_url = "https://api.linkedin.com/v2"
         self.headers = {
             'Authorization': f'Bearer {self.access_token}',
+            'X-Restli-Protocol-Version': '2.0.0',
             'Content-Type': 'application/json',
-            'X-Restli-Protocol-Version': '2.0.0'
+            'LinkedIn-Version': '202402'
         }
+        self.logger = self._setup_logger()
+    
+    def _setup_logger(self):
+        """Set up a logger for the LinkedIn API client."""
+        import logging
+        logger = logging.getLogger('linkedin_api')
+        logger.setLevel(logging.DEBUG)
+        
+        # Create console handler with a higher log level
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.DEBUG)
+        
+        # Create formatter and add it to the handlers
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        ch.setFormatter(formatter)
+        
+        # Add the handlers to the logger
+        if not logger.handlers:  # Avoid adding handlers multiple times
+            logger.addHandler(ch)
+            
+        return logger
+        
+    def _make_request(self, method, endpoint, json_data=None, params=None, headers=None, is_upload=False):
+        """Helper method to make HTTP requests with proper error handling and logging."""
+        url = f"{self.base_url}{endpoint}"
+        request_headers = self.headers.copy()
+        if headers:
+            request_headers.update(headers)
+            
+        # Log the request (without sensitive data)
+        log_data = {
+            'method': method,
+            'url': url,
+            'has_json': json_data is not None,
+            'params': params
+        }
+        self.logger.debug(f"Making request: {log_data}")
+        
+        try:
+            response = requests.request(
+                method=method,
+                url=url,
+                json=json_data,
+                params=params,
+                headers=request_headers,
+                timeout=30
+            )
+            
+            # Log the response status and headers
+            self.logger.debug(f"Response status: {response.status_code}")
+            
+            # Try to parse JSON if possible
+            response_data = None
+            try:
+                if response.text:
+                    response_data = response.json()
+            except json.JSONDecodeError:
+                response_data = response.text
+                
+            # Log error responses
+            if response.status_code >= 400:
+                error_msg = f"LinkedIn API error ({response.status_code}): {response.text}"
+                self.logger.error(error_msg)
+                
+                # Handle specific error cases
+                if response.status_code == 401:
+                    raise ValueError("Invalid or expired access token. Please re-authenticate your LinkedIn account.")
+                elif response.status_code == 403:
+                    # Check if it's a permission issue
+                    if "Not enough permissions" in response.text:
+                        raise ValueError("Insufficient permissions. Please ensure your LinkedIn app has the 'w_member_social' permission.")
+                
+                # Raise a general error for other cases
+                response.raise_for_status()
+                
+            return response_data or response.text
+            
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Request to LinkedIn API failed: {str(e)}"
+            self.logger.error(error_msg, exc_info=True)
+            raise Exception(error_msg) from e
 
     def post_text(self, text, visibility='PUBLIC'):
         """Post a text-only update to LinkedIn."""
@@ -49,96 +129,106 @@ class LinkedInAPI:
         }
         
         print(f"[LinkedIn API] Final payload: {json.dumps(payload, indent=2)}")
-        response = requests.post(endpoint, headers=self.headers, json=payload)
-        
-        if response.status_code != 201:
-            print(f"[LinkedIn API] Post failed: {response.status_code} {response.text}")
-            response.raise_for_status()
-        
-        return response.json()
-
-    def upload_media(self, file_path, media_type='IMAGE'):
-        """Upload media to LinkedIn and return the asset URN."""
-        # 1. Register the upload
-        register_endpoint = f"{self.base_url}/assets?action=registerUpload"
-        recipe = 'urn:li:digitalmediaRecipe:feedshare-image' if media_type == 'IMAGE' else 'urn:li:digitalmediaRecipe:feedshare-video'
-        
-        register_payload = {
-            'registerUploadRequest': {
-                'recipes': [recipe],
-                'owner': f"urn:li:person:{self.user_id}",
-                'serviceRelationships': [{'relationshipType': 'OWNER', 'identifier': 'urn:li:userGeneratedContent'}],
-                'supportedUploadMechanism': ['SYNCHRONOUS_UPLOAD']
-            }
-        }
-        
-        register_response = requests.post(register_endpoint, headers=self.headers, json=register_payload)
-        register_response.raise_for_status()
-        
-        response_data = register_response.json()['value']
-        upload_url = response_data['uploadMechanism']['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest']['uploadUrl']
-        asset_urn = response_data['asset']
-        
-        # 2. Upload the file
-        with open(file_path, 'rb') as file:
-            # Determine content type for the upload header
-            content_type = 'image/jpeg'
-            if file_path.lower().endswith('.png'):
-                content_type = 'image/png'
-            elif file_path.lower().endswith('.gif'):
-                content_type = 'image/gif'
-            elif file_path.lower().endswith('.mp4'):
-                content_type = 'video/mp4'
-            elif file_path.lower().endswith('.mov'):
-                content_type = 'video/quicktime'
-            elif file_path.lower().endswith('.avi'):
-                content_type = 'video/x-msvideo'
-            
-            # For videos, we need to use different headers
-            if media_type == 'VIDEO':
-                upload_headers = {
-                    'Content-Type': content_type,
-                    'Authorization': f'Bearer {self.access_token}'
-                }
-            else:
-                upload_headers = {'Content-Type': content_type}
-            
-            print(f"[LinkedIn API] Uploading {media_type} with content-type: {content_type}")
-            upload_response = requests.put(upload_url, headers=upload_headers, data=file)
-            
-            if upload_response.status_code not in [200, 201]:
-                print(f"[LinkedIn API] Upload failed: {upload_response.status_code} {upload_response.text}")
-                raise Exception(f"Upload failed: {upload_response.status_code} {upload_response.text}")
-            
-            print(f"[LinkedIn API] Upload successful for {media_type} (status: {upload_response.status_code})")
-        
-        return asset_urn
+        return self._make_request('POST', endpoint, json_data=payload)
 
 
 def post_to_linkedin(account, content, base_dir):
     """
     Main function to post content to LinkedIn, using credentials from the database.
     """
-    # Support both sqlite3.Row and dict for both account and content
-    if not isinstance(account, dict):
-        account = dict(account)
-    if not isinstance(content, dict):
-        content = dict(content)
     try:
-        credentials = json.loads(decrypt_data(account['credentials']))
-    except (json.JSONDecodeError, TypeError):
-        raise ValueError("Invalid credentials format for LinkedIn account.")
-    access_token = credentials.get('access_token')
-    person_urn = credentials.get('person_urn')
-    
-    # Extract user ID from person URN if needed
-    if person_urn and person_urn.startswith('urn:li:person:'):
-        user_id = person_urn.split(':')[-1]
-    else:
-        user_id = credentials.get('user_id')
-    
-    if not user_id:
-        raise ValueError("No user ID or person URN found in credentials")
+        # Support both sqlite3.Row and dict for both account and content
+        if not isinstance(account, dict):
+            account = dict(account)
+        if not isinstance(content, dict):
+            content = dict(content)
+        
+        print(f"[LinkedIn] Starting post process for content ID: {content.get('id')}")
+        
+        # Decrypt and parse credentials
+        credentials = json.loads(decrypt_data(account.get('credentials', '{}')))
+        if not credentials or 'access_token' not in credentials:
+            raise ValueError("Invalid or missing LinkedIn credentials")
+                
+        access_token = credentials.get('access_token')
+        person_urn = credentials.get('person_urn')
+        
+        # Log basic info (without sensitive data)
+        print(f"[LinkedIn] Processing post for account: {account.get('name')}")
+        print(f"[LinkedIn] Person URN: {'Found' if person_urn else 'Not found'}")
+        
+        # Extract user ID from person URN if available
+        user_id = None
+        if person_urn and person_urn.startswith('urn:li:person:'):
+            user_id = person_urn.split(':')[-1]
+        
+        if not user_id:
+            # Try to get user ID from the API if not in credentials
+            try:
+                print("[LinkedIn] No user ID found in credentials, fetching from API...")
+                headers = {
+                    'Authorization': f'Bearer {access_token}',
+                    'X-Restli-Protocol-Version': '2.0.0'
+                }
+                response = requests.get(
+                    'https://api.linkedin.com/v2/me',
+                    headers=headers,
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    user_data = response.json()
+                    user_id = user_data.get('id')
+                    print(f"[LinkedIn] Retrieved user ID from API: {user_id}")
+            except Exception as e:
+                print(f"[LinkedIn] Error fetching user ID: {str(e)}")
+        
+        if not user_id:
+            raise ValueError("Could not determine LinkedIn user ID. Please re-authenticate your account.")
+        
+        # Check if token is expired
+        expires_at = credentials.get('expires_at')
+        if expires_at:
+            from datetime import datetime, timezone
+            try:
+                expires_dt = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+                if datetime.now(timezone.utc) > expires_dt:
+                    error_msg = "LinkedIn access token has expired. Please re-authenticate your account."
+                    print(f"[LinkedIn] {error_msg}")
+                    raise ValueError(error_msg)
+            except (ValueError, AttributeError) as e:
+                print(f"[LinkedIn] Error checking token expiration: {str(e)}")
+        else:
+            print("[LinkedIn] No expiration time found for access token")
+            
+        # Check if we have the required scopes
+        required_scopes = {'w_member_social'}
+        # Robust: handle both list and string
+        raw_scopes = credentials.get('scopes', [])
+        if isinstance(raw_scopes, str):
+            token_scopes = set(raw_scopes.split())
+        elif isinstance(raw_scopes, list):
+            token_scopes = set(raw_scopes)
+        else:
+            token_scopes = set()
+        print(f"[LinkedIn] Token scopes for account {account.get('name')}: {token_scopes}")
+        missing_scopes = required_scopes - token_scopes
+        if missing_scopes:
+            error_msg = f"Missing required LinkedIn OAuth scopes: {', '.join(missing_scopes)}. Please re-authenticate with the correct permissions."
+            print(f"[LinkedIn] {error_msg}")
+            raise ValueError(error_msg)
+            
+    except requests.exceptions.RequestException as e:
+        error_msg = f"[LinkedIn] Network error while connecting to LinkedIn API: {str(e)}"
+        print(error_msg)
+        raise Exception(error_msg) from e
+    except json.JSONDecodeError as e:
+        error_msg = f"[LinkedIn] Failed to parse LinkedIn API response: {str(e)}"
+        print(error_msg)
+        raise Exception(error_msg) from e
+    except Exception as e:
+        error_msg = f"[LinkedIn] Error in post_to_linkedin: {str(e)}"
+        print(error_msg)
+        raise Exception(error_msg) from e
     
     try:
         api = LinkedInAPI(access_token, user_id)

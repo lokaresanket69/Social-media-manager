@@ -56,6 +56,14 @@ def init_db():
         status TEXT DEFAULT 'pending', error TEXT, created_at TEXT NOT NULL,
         FOREIGN KEY(account_id) REFERENCES accounts(id)
     )''')
+    # Remove legacy Medium platform and associated accounts if they still exist
+    medium_row = c.execute('SELECT id FROM platforms WHERE name=?', ('medium',)).fetchone()
+    if medium_row:
+        medium_id = medium_row['id'] if hasattr(medium_row, 'keys') else medium_row[0]
+        c.execute('DELETE FROM accounts WHERE platform_id=?', (medium_id,))
+        c.execute('DELETE FROM platforms WHERE id=?', (medium_id,))
+
+    # Seed the supported platforms
     platforms = [
         ('youtube', 'YouTube'), ('instagram', 'Instagram'), ('twitter', 'Twitter'),
         ('pinterest', 'Pinterest'), ('linkedin', 'LinkedIn'),
@@ -231,8 +239,16 @@ def api_accounts():
                     except Exception as e:
                         return jsonify({'error': f'Credential validation failed: {str(e)}'}), 400
             encrypted_credentials = encrypt_data(json.dumps(credentials))
-            c.execute('INSERT INTO accounts (platform_id, name, credentials, created_at) VALUES (?, ?, ?, ?)',
-                      (platform_id, name, encrypted_credentials, datetime.utcnow().isoformat()))
+            # First, delete any existing LinkedIn accounts to avoid duplicates
+            if platform_name == 'linkedin':
+                linkedin_platform_id = c.execute('SELECT id FROM platforms WHERE name = ?', ('linkedin',)).fetchone()['id']
+                conn.execute('DELETE FROM accounts WHERE platform_id = ?', (linkedin_platform_id,))
+            
+            # Then insert the new account
+            conn.execute(
+                'INSERT INTO accounts (platform_id, name, credentials, created_at) VALUES (?, ?, ?, ?)',
+                (platform_id, name, encrypted_credentials, datetime.utcnow().isoformat())
+            )
             conn.commit()
             flash(f"Account '{name}' created successfully.", "success")
             return jsonify({'success': True})
@@ -384,13 +400,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")
-LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")
-LINKEDIN_REDIRECT_URI = os.getenv("LINKEDIN_REDIRECT_URI")  # Use .env value, not hardcoded
+# LinkedIn OAuth Configuration
+LINKEDIN_CLIENT_ID = os.getenv('LINKEDIN_CLIENT_ID')
+LINKEDIN_CLIENT_SECRET = os.getenv('LINKEDIN_CLIENT_SECRET')
+# Ensure the redirect URI matches exactly what's configured in your LinkedIn Developer App
+LINKEDIN_REDIRECT_URI = os.getenv('LINKEDIN_REDIRECT_URI', 'http://localhost:5000/linkedin/callback/oidc')
 
-# Store tokens and person URNs in memory for demo (replace with DB in production)
+# Global storage for LinkedIn tokens (in production, use a proper database)
+linkedin_tokens = {}
 linkedin_person_urns = {}
 linkedin_post_tokens = {}
+
+# Verify required LinkedIn environment variables
+if not all([LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET]):
+    print("WARNING: LinkedIn OAuth credentials not properly configured in environment variables")
 
 @app.route("/linkedin/auth")
 def linkedin_auth_redirect():
@@ -401,98 +424,252 @@ def linkedin_auth_redirect():
 
 @app.route("/linkedin/auth-oidc")
 def linkedin_auth_oidc():
-    scope = "openid profile email"
+    # Request all necessary permissions in one flow - using the latest LinkedIn API v2 scopes
+    scopes = [
+        "openid",
+        "profile",
+        "email",
+        "w_member_social",  # Required for posting content
+        "r_liteprofile",    # Required for basic profile access
+        "w_organization_social"  # Additional permission that might be needed
+    ]
+    scope_param = " ".join(scopes)
+    
+    # Generate a unique state parameter for CSRF protection
+    from flask import session
+    import secrets
+    state = secrets.token_urlsafe(16)
+    session['linkedin_auth_state'] = state
+    
+    # Ensure the redirect URI is properly URL-encoded
+    from urllib.parse import quote
+    encoded_redirect_uri = quote(LINKEDIN_REDIRECT_URI, safe='')
+    
     auth_url = (
         "https://www.linkedin.com/oauth/v2/authorization"
-        f"?response_type=code&client_id={LINKEDIN_CLIENT_ID}"
-        f"&redirect_uri={LINKEDIN_REDIRECT_URI}/oidc"
-        f"&scope={scope.replace(' ', '%20')}"
+        f"?response_type=code"
+        f"&client_id={LINKEDIN_CLIENT_ID}"
+        f"&redirect_uri={LINKEDIN_REDIRECT_URI}"  # Removed /oidc from here as it's already in the REDIRECT_URI
+        f"&scope={quote(scope_param, safe='')}"
+        f"&state={state}"
     )
-    return f'<a href="{auth_url}"><button>Connect LinkedIn (Get Person URN)</button></a>'
+    print(f"[DEBUG] Generated LinkedIn auth URL: {auth_url}")  # Debug log
+    return f'<a href="{auth_url}"><button>Connect LinkedIn Account</button></a>'
 
 @app.route("/linkedin/callback/oidc")
 def linkedin_callback_oidc():
+    print("\n[DEBUG] LinkedIn OIDC callback triggered")
+    print(f"[DEBUG] Request args: {dict(request.args)}")
+    
+    # Verify state parameter for CSRF protection
+    state = request.args.get("state")
+    session_state = session.pop('linkedin_auth_state', None)
+    
+    if not state or state != session_state:
+        print(f"[ERROR] Invalid state parameter. Expected: {session_state}, Got: {state}")
+        return "Invalid state parameter. Please try connecting again.", 400
+    
     code = request.args.get("code")
     error = request.args.get("error")
     error_description = request.args.get("error_description")
+    
     if error:
-        return f"LinkedIn OIDC error: {error} - {error_description if error_description else ''}", 400
+        return f"LinkedIn OAuth error: {error} - {error_description if error_description else ''}", 400
     if not code:
-        return f"No code provided in callback. Full query: {request.query_string.decode()}", 400
-    # Exchange code for access token
-    token_url = "https://www.linkedin.com/oauth/v2/accessToken"
-    data = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": f"{LINKEDIN_REDIRECT_URI}/oidc",
-        "client_id": LINKEDIN_CLIENT_ID,
-        "client_secret": LINKEDIN_CLIENT_SECRET,
-    }
+        return "No authorization code received from LinkedIn", 400
+    
     try:
-        resp = requests.post(token_url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
-        if resp.status_code != 200:
-            return f"Failed to get OIDC access token: {resp.text}", 400
-        token_data = resp.json()
-        access_token = token_data.get("access_token")
-        if not access_token:
-            return f"No access token in response: {token_data}", 400
-        # Fetch user info from /userinfo endpoint
-        userinfo_resp = requests.get(
-            "https://api.linkedin.com/v2/userinfo",
-            headers={"Authorization": f"Bearer {access_token}"}
+        # Exchange authorization code for access token
+        token_url = "https://www.linkedin.com/oauth/v2/accessToken"
+        data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": LINKEDIN_REDIRECT_URI,
+            "client_id": LINKEDIN_CLIENT_ID,
+            "client_secret": LINKEDIN_CLIENT_SECRET,
+        }
+        
+        print(f"[DEBUG] Exchanging code for token with redirect_uri: {LINKEDIN_REDIRECT_URI}")
+        print(f"[DEBUG] Client ID: {LINKEDIN_CLIENT_ID}")
+        print(f"[DEBUG] Code: {code[:10]}...")
+        
+        print(f"[DEBUG] Exchanging code for token. Redirect URI: {LINKEDIN_REDIRECT_URI}")  # Debug log
+        
+        # Get access token
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        print(f"[DEBUG] Sending request to {token_url} with data: {data}")
+        
+        token_resp = requests.post(
+            token_url,
+            data=data,
+            headers=headers,
+            timeout=30
         )
+        
+        print(f"[DEBUG] Token response status: {token_resp.status_code}")
+        print(f"[DEBUG] Token response: {token_resp.text}")
+        
+        if token_resp.status_code != 200:
+            return f"Failed to get access token: {token_resp.status_code} {token_resp.text}", 400
+        
+        token_data = token_resp.json()
+        access_token = token_data.get("access_token")
+        expires_in = token_data.get("expires_in", 5184000)  # Default to 60 days if not provided
+        
+        if not access_token:
+            return "No access token in response from LinkedIn", 400
+        
+        # Get user info to get the person URN
+        userinfo_headers = {
+            "Authorization": f"Bearer {access_token}",
+            "X-Restli-Protocol-Version": "2.0.0"
+        }
+        
+        # Get basic profile info
+        userinfo_resp = requests.get(
+            "https://api.linkedin.com/v2/me",
+            headers=userinfo_headers,
+            timeout=30
+        )
+        
         if userinfo_resp.status_code != 200:
-            return f"Failed to fetch LinkedIn userinfo: {userinfo_resp.text}", 400
+            return f"Failed to get user info: {userinfo_resp.status_code} {userinfo_resp.text}", 400
+        
         userinfo = userinfo_resp.json()
-        person_urn = f"urn:li:person:{userinfo['sub']}"
-        email = userinfo.get('email')
-        name = userinfo.get('name', email)
-        # Store info in session for registration
+        person_urn = userinfo.get('id')
+        
+        # Get email address
+        email_resp = requests.get(
+            "https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements*(handle~))",
+            headers=userinfo_headers,
+            timeout=30
+        )
+        
+        email = None
+        if email_resp.status_code == 200:
+            email_data = email_resp.json()
+            if 'elements' in email_data and len(email_data['elements']) > 0:
+                email = email_data['elements'][0].get('handle~', {}).get('emailAddress')
+        
+        # Store account info in session for registration
         session['linkedin_account'] = {
             'access_token': access_token,
-            'person_urn': person_urn,
+            'person_urn': f"urn:li:person:{person_urn}" if person_urn else None,
             'email': email,
-            'name': name
+            'name': userinfo.get('localizedFirstName', '') + ' ' + userinfo.get('localizedLastName', ''),
+            'expires_at': (datetime.utcnow() + timedelta(seconds=expires_in)).isoformat(),
+            'scopes': scope_param.split()  # Store as a list
         }
+        
         # Redirect to registration endpoint
         return redirect(url_for('linkedin_register_account'))
+        
     except Exception as e:
-        return f"LinkedIn callback processing failed: {str(e)}", 500
+        import traceback
+        print(f"Error in LinkedIn callback: {str(e)}\n{traceback.format_exc()}")
+        return f"Failed to process LinkedIn callback: {str(e)}", 500
 
 @app.route("/linkedin/register-account")
 def linkedin_register_account():
+    # Get account info from session
     account = session.pop('linkedin_account', None)
     if not account:
-        return "No LinkedIn account info found in session. Please connect again.", 400
-    conn = get_db()
-    c = conn.cursor()
-    # Get LinkedIn platform_id
-    platform = c.execute('SELECT id FROM platforms WHERE name=?', ('linkedin',)).fetchone()
-    if not platform:
-        conn.close()
-        return "LinkedIn platform not found in DB.", 500
-    platform_id = platform['id']
-    # Check if account already exists
-    existing = c.execute('SELECT id FROM accounts WHERE platform_id=? AND name=?', (platform_id, account['name'])).fetchone()
-    if existing:
-        conn.close()
-        flash('LinkedIn account already registered.', 'info')
+        flash('No LinkedIn account information found. Please try connecting again.', 'error')
         return redirect(url_for('platform_page', platform_name='linkedin'))
-    # Store credentials as JSON
-    credentials = {
-        'access_token': account['access_token'],
-        'person_urn': account['person_urn'],
-        'email': account['email']
-    }
-    encrypted_credentials = encrypt_data(json.dumps(credentials))
     
-    # Insert the account
-    c.execute('INSERT INTO accounts (platform_id, name, credentials, created_at) VALUES (?, ?, ?, ?)',
-              (platform_id, account['name'], encrypted_credentials, datetime.utcnow().isoformat()))
-    conn.commit()
-    conn.close()
-    flash('LinkedIn account registered successfully!', 'success')
-    return redirect(url_for('platform_page', platform_name='linkedin'))
+    conn = None
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        
+        # Get LinkedIn platform_id
+        platform = c.execute('SELECT id FROM platforms WHERE name = ?', ('linkedin',)).fetchone()
+        if not platform:
+            flash('LinkedIn platform not found in database.', 'error')
+            return redirect(url_for('platform_page', platform_name='linkedin'))
+            
+        platform_id = platform['id']
+        account_name = account.get('name', 'LinkedIn Account').strip()
+        
+        if not account_name:
+            account_name = account.get('email', 'LinkedIn User')
+        
+        # Prepare credentials with all required fields
+        credentials = {
+            'access_token': account['access_token'],
+            'person_urn': account.get('person_urn'),
+            'expires_at': account.get('expires_at'),
+            'scopes': account.get('scopes', []),  # Store granted scopes as list
+            'email': account.get('email', ''),     # Store email for reference
+            'name': account.get('name', '')        # Store name for display
+        }
+        
+        # Encrypt the credentials
+        encrypted_credentials = encrypt_data(json.dumps(credentials))
+        
+        # Check if account already exists (by email or person_urn)
+        existing = None
+        if account.get('email'):
+            # Try to find by email
+            existing = c.execute(
+                'SELECT id, credentials FROM accounts WHERE platform_id = ? AND json_extract(credentials, "$.email") = ?',
+                (platform_id, account['email'])
+            ).fetchone()
+        
+        if not existing and account.get('person_urn'):
+            # Try to find by person_urn
+            existing = c.execute(
+                'SELECT id, credentials FROM accounts WHERE platform_id = ? AND json_extract(credentials, "$.person_urn") = ?',
+                (platform_id, account['person_urn'])
+            ).fetchone()
+        
+        current_time = datetime.utcnow().isoformat()
+        
+        if existing:
+            # Update existing account
+            account_id = existing['id']
+            c.execute('''
+                UPDATE accounts 
+                SET name = ?, 
+                    credentials = ?,
+                    updated_at = ?
+                WHERE id = ?
+            ''', (
+                account_name,
+                encrypted_credentials,
+                current_time,
+                account_id
+            ))
+            message = 'LinkedIn account updated successfully!'
+        else:
+            # Create new account
+            c.execute('''
+                INSERT INTO accounts (platform_id, name, credentials, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (
+                platform_id,
+                account_name,
+                encrypted_credentials,
+                current_time,
+                current_time
+            ))
+            account_id = c.lastrowid
+            message = 'LinkedIn account registered successfully!'
+        
+        conn.commit()
+        flash(message, 'success')
+        return redirect(url_for('platform_page', platform_name='linkedin'))
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        import traceback
+        print(f"Error registering LinkedIn account: {str(e)}\n{traceback.format_exc()}")
+        flash(f'Failed to register LinkedIn account: {str(e)}', 'error')
+        return redirect(url_for('platform_page', platform_name='linkedin'))
+    finally:
+        if conn:
+            conn.close()
 @app.route("/linkedin/auth-post")
 def linkedin_auth_post():
     email = request.args.get("email")
@@ -532,11 +709,19 @@ def linkedin_callback_post():
         return f"Failed to get posting access token: {resp.text}", 400
     token_data = resp.json()
     access_token = token_data.get("access_token")
+    granted_scope = token_data.get("scope", "")
     if not access_token:
         return f"No access token in response: {token_data}", 400
-    # Store posting access token in memory (replace with DB in production)
+    # Store posting access token and scopes in memory (replace with DB in production)
+    scopes = granted_scope.split() if granted_scope else []
     linkedin_post_tokens[email] = access_token
-    return f"LinkedIn posting authentication successful!<br>Access Token stored for posting.<br><a href='/linkedin/post-example?email={email}'>Post Example</a>"
+    # Store the granted scopes for this user as well, so post_to_linkedin can check them
+    # If you ever store these credentials in DB, make sure 'scopes' is a list, not a string!
+    if 'linkedin_post_scopes' not in globals():
+        global linkedin_post_scopes
+        linkedin_post_scopes = {}
+    linkedin_post_scopes[email] = scopes
+    return f"LinkedIn posting authentication successful!<br>Access Token and scopes stored for posting.<br><a href='/linkedin/post-example?email={email}'>Post Example</a>"
 
 
 @app.route("/linkedin/post-example")
