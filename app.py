@@ -19,7 +19,7 @@ from youtube_api import post_to_youtube
 from instagram_api import post_to_instagram  # Enable Instagram
 from twitter_api import post_to_twitter
 from pinterest_api import post_to_pinterest
-from medium_api import post_to_medium
+
 from linkedin_api import post_to_linkedin
 from reddit_api import post_to_reddit
 from youtube_auth_simple import get_youtube_auth_url, exchange_code_and_store_credentials
@@ -58,7 +58,7 @@ def init_db():
     )''')
     platforms = [
         ('youtube', 'YouTube'), ('instagram', 'Instagram'), ('twitter', 'Twitter'),
-        ('pinterest', 'Pinterest'), ('medium', 'Medium'), ('linkedin', 'LinkedIn'),
+        ('pinterest', 'Pinterest'), ('linkedin', 'LinkedIn'),
         ('reddit', 'Reddit')
     ]
     c.executemany('INSERT OR IGNORE INTO platforms (name, display_name) VALUES (?, ?)', platforms)
@@ -674,7 +674,7 @@ platform_apis = {
     'instagram': post_to_instagram,  # Enabled
     'twitter': post_to_twitter,
     'pinterest': post_to_pinterest,
-    'medium': post_to_medium,
+
     'linkedin': post_to_linkedin,
     'reddit': post_to_reddit,
 }

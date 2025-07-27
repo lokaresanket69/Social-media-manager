@@ -67,7 +67,8 @@ class LinkedInAPI:
             'registerUploadRequest': {
                 'recipes': [recipe],
                 'owner': f"urn:li:person:{self.user_id}",
-                'serviceRelationships': [{'relationshipType': 'OWNER', 'identifier': 'urn:li:userGeneratedContent'}]
+                'serviceRelationships': [{'relationshipType': 'OWNER', 'identifier': 'urn:li:userGeneratedContent'}],
+                'supportedUploadMechanism': ['SYNCHRONOUS_UPLOAD']
             }
         }
         
