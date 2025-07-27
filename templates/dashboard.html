@@ -139,14 +139,20 @@
                         </div>
                     </div>
                     <div id="otherPlatformFields">
-                        <div class="mb-3">
-                            <label for="credential" class="form-label">Credentials</label>
-                            <input type="file" class="form-control" id="credential" name="credential">
-                            <div class="form-text">Upload your API credentials file or enter token below</div>
+                        <div class="mb-3" id="youtubeOAuthFields" style="display:none;">
+                            <button type="button" class="btn btn-danger w-100" id="youtube-oauth-btn">Connect with YouTube</button>
+                            <div class="form-text mt-2">Connect your YouTube channel securely via OAuth. No file or token needed.</div>
                         </div>
-                        <div class="mb-3">
-                            <label for="credentialToken" class="form-label">Or Enter Token</label>
-                            <textarea class="form-control" id="credentialToken" name="credential_token" rows="3"></textarea>
+                        <div id="nonYouTubeFields">
+                            <div class="mb-3">
+                                <label for="credential" class="form-label">Credentials</label>
+                                <input type="file" class="form-control" id="credential" name="credential">
+                                <div class="form-text">Upload your API credentials file or enter token below</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="credentialToken" class="form-label">Or Enter Token</label>
+                                <textarea class="form-control" id="credentialToken" name="credential_token" rows="3"></textarea>
+                            </div>
                         </div>
                     </div>
                 </form>
@@ -156,21 +162,40 @@
                 var platformSelect = document.getElementById('platform');
                 var instaFields = document.getElementById('instagramFields');
                 var otherFields = document.getElementById('otherPlatformFields');
+                var ytOAuthFields = document.getElementById('youtubeOAuthFields');
+                var nonYtFields = document.getElementById('nonYouTubeFields');
+                var ytBtn = document.getElementById('youtube-oauth-btn');
                 if (platformSelect) {
                     platformSelect.addEventListener('change', function() {
                         var selected = platformSelect.options[platformSelect.selectedIndex];
-                        if (selected && selected.getAttribute('data-platform-name') === 'instagram') {
+                        var platformName = selected && selected.getAttribute('data-platform-name');
+                        if (platformName === 'instagram') {
                             instaFields.style.display = '';
                             otherFields.style.display = 'none';
                             document.getElementById('instaUsername').required = true;
                             document.getElementById('instaPassword').required = true;
+                        } else if (platformName === 'youtube') {
+                            instaFields.style.display = 'none';
+                            otherFields.style.display = '';
+                            ytOAuthFields.style.display = '';
+                            nonYtFields.style.display = 'none';
+                            document.getElementById('instaUsername').required = false;
+                            document.getElementById('instaPassword').required = false;
                         } else {
                             instaFields.style.display = 'none';
                             otherFields.style.display = '';
+                            ytOAuthFields.style.display = 'none';
+                            nonYtFields.style.display = '';
                             document.getElementById('instaUsername').required = false;
                             document.getElementById('instaPassword').required = false;
                         }
                     });
+                }
+                if (ytBtn) {
+                    ytBtn.onclick = function() {
+                        var name = document.getElementById('accountName').value || 'YouTube User';
+                        window.location.href = '/youtube/authorize?account_name=' + encodeURIComponent(name);
+                    };
                 }
             });
             </script>

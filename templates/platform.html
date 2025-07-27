@@ -154,6 +154,22 @@
                         <a href="/linkedin/auth" class="btn btn-primary w-100">Connect LinkedIn</a>
                         <div class="form-text mt-2">Connect your LinkedIn account securely via OAuth. No file or token needed.</div>
                     </div>
+                    {% elif platform.name == 'youtube' %}
+                    <div class="mb-3 text-center">
+                        <button type="button" class="btn btn-danger w-100" id="youtube-oauth-btn">Connect with YouTube</button>
+                        <div class="form-text mt-2">Connect your YouTube channel securely via OAuth. No file or token needed.</div>
+                    </div>
+                    <script>
+                    document.addEventListener('DOMContentLoaded', function() {
+                        var ytBtn = document.getElementById('youtube-oauth-btn');
+                        if (ytBtn) {
+                            ytBtn.onclick = function() {
+                                var name = document.getElementById('accountName').value || 'YouTube User';
+                                window.location.href = '/youtube/authorize?account_name=' + encodeURIComponent(name);
+                            };
+                        }
+                    });
+                    </script>
                     {% elif platform.name == 'reddit' %}
                     <div class="mb-3">
                         <label for="redditClientId" class="form-label">Client ID</label>
@@ -214,7 +230,11 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                {% if platform.name != 'linkedin' %}
+                {% if platform.name == 'linkedin' %}
+                <!-- No submit button for LinkedIn, handled by OAuth -->
+                {% elif platform.name == 'youtube' %}
+                <!-- No submit button for YouTube, handled by OAuth -->
+                {% else %}
                 <button type="submit" class="btn btn-primary" form="addAccountForm">Add Account</button>
                 {% endif %}
             </div>
