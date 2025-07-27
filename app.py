@@ -591,18 +591,22 @@ def youtube_oauth2callback():
     """
     error = request.args.get('error')
     if error:
-        return f"YouTube OAuth error: {error}", 400
+        flash(f"YouTube OAuth error: {error}", "danger")
+        return redirect(url_for('platform_page', platform_name='youtube'))
     code = request.args.get('code')
     if not code:
-        return "Missing code in callback.", 400
+        flash("Missing code in callback.", "danger")
+        return redirect(url_for('platform_page', platform_name='youtube'))
     account_name = session.pop('pending_youtube_account_name', 'YouTube User')
     try:
         result = exchange_code_and_store_credentials(code, account_name)
         # Here you should save result['credentials'] and result['name'] to your DB as needed.
         # For demo, just show success and channel info.
-        return f"YouTube authentication successful!<br>Channel: {result['channel_info']['name']}<br>Account Name: {result['name']}<br><br>Credentials (encrypted):<br><pre>{result['credentials']}</pre>"
+        flash(f"YouTube channel '{result['channel_info']['name']}' added successfully!", "success")
+        return redirect(url_for('platform_page', platform_name='youtube'))
     except Exception as e:
-        return f"YouTube authentication failed: {str(e)}", 400
+        flash(f"YouTube authentication failed: {str(e)}", "danger")
+        return redirect(url_for('platform_page', platform_name='youtube'))
 
 @app.route('/delete/account/<int:account_id>', methods=['POST'])
 def delete_account(account_id):
