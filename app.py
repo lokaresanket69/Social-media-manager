@@ -443,21 +443,15 @@ if not all([LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET]):
 @app.route("/linkedin/auth")
 def linkedin_auth_redirect():
     """
-    Redirect /linkedin/auth to the correct OIDC endpoint for backward compatibility.
-    """
-    return redirect(url_for('linkedin_auth_oidc'))
-
-@app.route("/linkedin/auth-oidc")
 def linkedin_auth_oidc():
     # Request all necessary permissions in one flow - using the latest LinkedIn API v2 scopes
-    scopes = [
-        "openid",
-        "profile",
-        "email",
-        "w_member_social",  # Required for posting content
-        "r_liteprofile"    # Required for basic profile access
+    allowed_scopes = [
+        "openid",           # Use your name and photo
+        "profile",          # Use your name and photo
+        "email",            # Use your primary email address
+        "w_member_social"   # Create, modify, and delete posts, comments, and reactions on your behalf
     ]
-    scope_param = " ".join(scopes)
+    scope_param = " ".join(allowed_scopes)
     
     # Generate a unique state parameter for CSRF protection
     from flask import session
@@ -477,6 +471,8 @@ def linkedin_auth_oidc():
         f"&state={state}"
     )
     print(f"[DEBUG] Generated LinkedIn auth URL: {auth_url}")  # Debug log
+    print(f"[DEBUG] Scopes: {scope_param}")  # Debug log
+    print(f"[DEBUG] Redirect URI: {linkedin_redirect_uri}")  # Debug log
     return f'<a href="{auth_url}"><button>Connect LinkedIn Account</button></a>'
 
 @app.route("/linkedin/callback/oidc")
