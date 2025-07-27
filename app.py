@@ -600,8 +600,20 @@ def youtube_oauth2callback():
     account_name = session.pop('pending_youtube_account_name', 'YouTube User')
     try:
         result = exchange_code_and_store_credentials(code, account_name)
-        # Here you should save result['credentials'] and result['name'] to your DB as needed.
-        # For demo, just show success and channel info.
+        # Save the new YouTube account to the database if not already present
+        conn = get_db()
+        c = conn.cursor()
+        platform = c.execute('SELECT id FROM platforms WHERE name=?', ('youtube',)).fetchone()
+        if platform:
+            platform_id = platform['id']
+            encrypted_credentials = result['credentials']
+            # Avoid duplicate accounts by channel_id
+            existing = c.execute('SELECT id FROM accounts WHERE platform_id=? AND name=?', (platform_id, result['name'])).fetchone()
+            if not existing:
+                c.execute('INSERT INTO accounts (platform_id, name, credentials, created_at) VALUES (?, ?, ?, ?)',
+                          (platform_id, result['name'], encrypted_credentials, datetime.utcnow().isoformat()))
+                conn.commit()
+        conn.close()
         flash(f"YouTube channel '{result['channel_info']['name']}' added successfully!", "success")
         return redirect(url_for('platform_page', platform_name='youtube'))
     except Exception as e:
