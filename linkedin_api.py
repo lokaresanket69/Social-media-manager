@@ -160,7 +160,15 @@ def post_to_linkedin(account, content, base_dir):
             # Determine media category based on the actual media type, not the URN
             media_category = 'VIDEO' if media_type == 'VIDEO' else 'IMAGE'
             print(f"[LinkedIn API] Posting with media: {media_urn}, category: {media_category}")
-            response = api.post_with_media(text_content, media_urn, media_category=media_category)
+            try:
+                response = api.post_with_media(text_content, media_urn, media_category=media_category)
+            except requests.HTTPError as http_err:
+                # If permissions error, retry as text-only
+                if http_err.response.status_code == 403:
+                    print("[LinkedIn API] 403 when posting with media – falling back to text-only post.")
+                    response = api.post_text(text_content)
+                else:
+                    raise
         else:
             print(f"[LinkedIn API] Posting text-only update.")
             response = api.post_text(text_content)

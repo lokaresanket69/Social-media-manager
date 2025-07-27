@@ -498,7 +498,7 @@ def linkedin_auth_post():
     email = request.args.get("email")
     if not email:
         return "Missing email. Please authenticate with OIDC first.", 400
-    scope = "w_member_social"
+    scope = "r_liteprofile w_member_social"
     auth_url = (
         "https://www.linkedin.com/oauth/v2/authorization"
         f"?response_type=code&client_id={LINKEDIN_CLIENT_ID}"

@@ -328,15 +328,7 @@
             postTitle.setAttribute('required', 'true'); // Title is generally always required
 
             // Platform-specific adjustments
-            if (platformName === 'medium') {
-                mediaGroup.style.display = 'none'; // Hide media upload for text-only platforms
-                postMedia.removeAttribute('required'); // Ensure it's not required
-                postDescription.setAttribute('required', 'true');
-                postDescription.setAttribute('rows', '6'); // Give more space for content
-                postDescription.previousElementSibling.textContent = 'Article Content';
-                postTitle.previousElementSibling.textContent = 'Article Title';
-                hashtagsGroup.style.display = 'block'; // Medium uses tags
-            } else if (platformName === 'pinterest') {
+            if (platformName === 'pinterest') {
                 mediaGroup.style.display = 'block'; // Show media upload
                 postMedia.setAttribute('required', 'true'); // Media is required for Pinterest
                 postDescription.setAttribute('required', 'false'); // Description is optional
@@ -390,10 +382,10 @@
             if (platformName === 'pinterest' || platformName === 'youtube' || platformName === 'instagram') {
                 isMediaRequired = true;
             }
-            if (platformName === 'quora' || platformName === 'medium' || platformName === 'twitter' || platformName === 'linkedin') {
+            if (platformName === 'quora' || platformName === 'twitter' || platformName === 'linkedin') {
                 isDescriptionRequired = true;
             }
-            if (platformName === 'youtube' || platformName === 'pinterest' || platformName === 'quora' || platformName === 'medium') {
+            if (platformName === 'youtube' || platformName === 'pinterest' || platformName === 'quora') {
                 isTitleRequired = true;
             }
 
