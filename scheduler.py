@@ -11,16 +11,36 @@ def process_scheduled_posts(get_db, platform_apis, base_dir):
     
     conn = get_db()
     try:
-        now_iso = datetime.now(timezone.utc).isoformat()
-        pending_posts = conn.execute("SELECT * FROM content WHERE status='pending' AND schedule_time <= ?", (now_iso,)).fetchall()
-        
-        if not pending_posts:
+        # Fetch all pending posts and filter in Python to avoid string comparison issues
+        pending_rows = conn.execute("SELECT * FROM content WHERE status='pending'").fetchall()
+        due_posts = []
+        now_utc = datetime.now(timezone.utc)
+        for row in pending_rows:
+            schedule_time_str = row['schedule_time']
+            if not schedule_time_str:
+                # No schedule specified – post immediately
+                due_posts.append(row)
+                continue
+            try:
+                sch_dt = isoparse(schedule_time_str)
+                # Ensure timezone aware (treat naive as UTC)
+                if sch_dt.tzinfo is None:
+                    sch_dt = sch_dt.replace(tzinfo=timezone.utc)
+                sch_dt_utc = sch_dt.astimezone(timezone.utc)
+                if sch_dt_utc <= now_utc:
+                    due_posts.append(row)
+            except Exception as e:
+                # Malformed timestamp – log and process anyway so it does not get stuck forever
+                print(f"[Scheduler] Failed to parse schedule_time '{schedule_time_str}' for post ID {row['id']}: {e}. Processing immediately.")
+                due_posts.append(row)
+
+        if not due_posts:
             print("[Scheduler] No posts are due for processing.")
             return
 
-        print(f"[Scheduler] Found {len(pending_posts)} posts ready to be processed.")
+        print(f"[Scheduler] Found {len(due_posts)} posts ready to be processed.")
 
-        for post in pending_posts:
+        for post in due_posts:
             print(f"[Scheduler] Processing post ID: {post['id']}")
             
             # Set status to 'processing' to prevent reprocessing by other workers
