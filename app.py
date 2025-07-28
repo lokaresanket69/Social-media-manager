@@ -81,6 +81,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT, platform_id INTEGER NOT NULL, name TEXT NOT NULL,
         credentials TEXT NOT NULL,
         created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
         FOREIGN KEY(platform_id) REFERENCES platforms(id)
     )''')
     c.execute('''CREATE TABLE IF NOT EXISTS content (
@@ -279,8 +280,8 @@ def api_accounts():
             
             # Then insert the new account
             conn.execute(
-                'INSERT INTO accounts (platform_id, name, credentials, created_at) VALUES (?, ?, ?, ?)',
-                (platform_id, name, encrypted_credentials, datetime.utcnow().isoformat())
+                'INSERT INTO accounts (platform_id, name, credentials, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+                (platform_id, name, encrypted_credentials, datetime.utcnow().isoformat(), datetime.utcnow().isoformat())
             )
             conn.commit()
             flash(f"Account '{name}' created successfully.", "success")
@@ -828,7 +829,7 @@ def youtube_oauth2callback():
             # Avoid duplicate accounts by channel_id
             existing = c.execute('SELECT id FROM accounts WHERE platform_id=? AND name=?', (platform_id, result['name'])).fetchone()
             if not existing:
-                c.execute('INSERT INTO accounts (platform_id, name, credentials, created_at) VALUES (?, ?, ?, ?)',
+                c.execute('INSERT INTO accounts (platform_id, name, credentials, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
                           (platform_id, result['name'], encrypted_credentials, datetime.utcnow().isoformat()))
                 conn.commit()
         conn.close()
