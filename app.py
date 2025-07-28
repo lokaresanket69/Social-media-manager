@@ -13,6 +13,14 @@ from security import encrypt_data, decrypt_data
 import requests
 from urllib.parse import urlencode
 
+# LinkedIn OAuth scopes allowed for this application (must match dashboard exactly)
+LINKEDIN_ALLOWED_SCOPES = [
+    "openid",
+    "profile",
+    "email",
+    "w_member_social",
+]
+
 # --- Local API Modules ---
 from scheduler import process_scheduled_posts
 from youtube_api import post_to_youtube
@@ -450,13 +458,8 @@ def linkedin_auth_redirect():
 @app.route('/linkedin/auth-oidc')
 def linkedin_auth_oidc():
     # Request all necessary permissions in one flow - using the latest LinkedIn API v2 scopes
-    allowed_scopes = [
-        "openid",           # Use your name and photo
-        "profile",          # Use your name and photo
-        "email",            # Primary email address
+    allowed_scopes = LINKEDIN_ALLOWED_SCOPES
 
-        "w_member_social"   # Create, modify, and delete posts, comments, and reactions on your behalf
-    ]
     scope_param = " ".join(allowed_scopes)
     
     # Generate a unique state parameter for CSRF protection
@@ -585,7 +588,7 @@ def linkedin_callback_oidc():
             'email': email,
             'name': userinfo.get('localizedFirstName', '') + ' ' + userinfo.get('localizedLastName', ''),
             'expires_at': (datetime.utcnow() + timedelta(seconds=expires_in)).isoformat(),
-            'scopes': scope_param.split()  # Store as a list
+            'scopes': LINKEDIN_ALLOWED_SCOPES
         }
         
         # Redirect to registration endpoint
