@@ -110,7 +110,7 @@ class LinkedInAPI:
 
     def _post_ugc(self, text, visibility, media_urn=None, media_category=None):
         """Helper method to make UGC (User Generated Content) posts."""
-        endpoint = f"{self.base_url}/ugcPosts"
+        endpoint = "/ugcPosts"  # Just the endpoint path, base_url is already set
         share_content = {'shareCommentary': {'text': text}}
 
         if media_urn and media_category:
