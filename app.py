@@ -451,8 +451,9 @@ def linkedin_auth_redirect():
 def linkedin_auth_oidc():
     # Request all necessary permissions in one flow - using the latest LinkedIn API v2 scopes
     allowed_scopes = [
-        "r_liteprofile",    # Basic profile info for /me endpoint
-        "r_emailaddress",   # Primary email address
+        "openid",           # Use your name and photo
+        "profile",          # Use your name and photo
+        "email",            # Primary email address
 
         "w_member_social"   # Create, modify, and delete posts, comments, and reactions on your behalf
     ]
@@ -552,7 +553,7 @@ def linkedin_callback_oidc():
         
         # Get basic profile info
         userinfo_resp = requests.get(
-            "https://api.linkedin.com/v2/me",
+            "https://api.linkedin.com/v2/userinfo",
             headers=userinfo_headers,
             timeout=30
         )
@@ -561,7 +562,8 @@ def linkedin_callback_oidc():
             return f"Failed to get user info: {userinfo_resp.status_code} {userinfo_resp.text}", 400
         
         userinfo = userinfo_resp.json()
-        person_urn = userinfo.get('id')
+        # OIDC userinfo response: 'sub' is the member ID
+        person_urn = userinfo.get('sub') or userinfo.get('id')
         
         # Get email address
         email_resp = requests.get(
