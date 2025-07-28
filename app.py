@@ -796,9 +796,7 @@ def youtube_authorize():
 
 @app.route('/youtube/oauth2callback')
 def youtube_oauth2callback():
-    """
-    Handle Google's redirect, exchange code for tokens, validate, and store credentials.
-    """
+    # Handle Google's redirect, exchange code for tokens, validate, and store credentials.
     error = request.args.get('error')
     if error:
         flash(f"YouTube OAuth error: {error}", "danger")
