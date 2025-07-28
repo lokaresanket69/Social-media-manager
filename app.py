@@ -780,6 +780,10 @@ def linkedin_post_example():
 # --- YouTube OAuth Web Flow ---
 from youtube_auth_simple import get_youtube_auth_url, exchange_code_and_store_credentials
 
+# -----------------------------------------------------------------------------
+# YouTube OAuth endpoints
+# -----------------------------------------------------------------------------
+
 @app.route('/youtube/authorize')
 def youtube_authorize():
     """
