@@ -442,7 +442,11 @@ if not all([LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET]):
 
 @app.route("/linkedin/auth")
 def linkedin_auth_redirect():
-    """
+    """Legacy endpoint – forwards to the main OIDC auth route."""
+    # Simply forward to the main LinkedIn OIDC auth flow
+    return redirect(url_for('linkedin_auth_oidc'))
+
+
 def linkedin_auth_oidc():
     # Request all necessary permissions in one flow - using the latest LinkedIn API v2 scopes
     allowed_scopes = [
