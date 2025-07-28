@@ -447,6 +447,7 @@ def linkedin_auth_redirect():
     return redirect(url_for('linkedin_auth_oidc'))
 
 
+@app.route('/linkedin/auth-oidc')
 def linkedin_auth_oidc():
     # Request all necessary permissions in one flow - using the latest LinkedIn API v2 scopes
     allowed_scopes = [
