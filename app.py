@@ -786,10 +786,8 @@ from youtube_auth_simple import get_youtube_auth_url, exchange_code_and_store_cr
 
 @app.route('/youtube/authorize')
 def youtube_authorize():
-    """
-    Redirect user to Google's OAuth 2.0 server for YouTube authentication.
-    Optionally, pass ?account_name=... as a query param.
-    """
+    # Redirect user to Google's OAuth 2.0 server for YouTube authentication.
+    # Optionally, pass ?account_name=... as a query param.
     account_name = request.args.get('account_name', 'YouTube User')
     # Store account_name in session for use after callback
     session['pending_youtube_account_name'] = account_name
