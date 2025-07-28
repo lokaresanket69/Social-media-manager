@@ -587,7 +587,7 @@ def linkedin_callback_oidc():
             'access_token': access_token,
             'person_urn': f"urn:li:person:{person_urn}" if person_urn else None,
             'email': email,
-            'name': userinfo.get('localizedFirstName', '') + ' ' + userinfo.get('localizedLastName', ''),
+            'name': (userinfo.get('name') or ((userinfo.get('given_name','') + ' ' + userinfo.get('family_name','')).strip()) or (userinfo.get('localizedFirstName','') + ' ' + userinfo.get('localizedLastName','')).strip()),
             'expires_at': (datetime.utcnow() + timedelta(seconds=expires_in)).isoformat(),
             'scopes': LINKEDIN_ALLOWED_SCOPES
         }
@@ -623,7 +623,7 @@ def linkedin_register_account():
         account_name = account.get('name', 'LinkedIn Account').strip()
         
         if not account_name:
-            account_name = account.get('email', 'LinkedIn User')
+            account_name = account.get('email') or 'LinkedIn User'
         
         # Prepare credentials with all required fields
         credentials = {
