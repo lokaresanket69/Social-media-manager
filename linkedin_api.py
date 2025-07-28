@@ -190,8 +190,15 @@ def post_to_linkedin(account, content, base_dir):
         if expires_at:
             from datetime import datetime, timezone
             try:
+                # Ensure both datetimes are timezone-aware
                 expires_dt = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
-                if datetime.now(timezone.utc) > expires_dt:
+                current_dt = datetime.now(timezone.utc)
+                
+                # If expires_dt is naive, make it timezone-aware
+                if expires_dt.tzinfo is None:
+                    expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+                
+                if current_dt > expires_dt:
                     error_msg = "LinkedIn access token has expired. Please re-authenticate your account."
                     print(f"[LinkedIn] {error_msg}")
                     raise ValueError(error_msg)
