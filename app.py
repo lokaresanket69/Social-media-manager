@@ -451,9 +451,9 @@ def linkedin_auth_redirect():
 def linkedin_auth_oidc():
     # Request all necessary permissions in one flow - using the latest LinkedIn API v2 scopes
     allowed_scopes = [
-        "openid",           # Use your name and photo
-        "profile",          # Use your name and photo
-        "email",            # Use your primary email address
+        "r_liteprofile",    # Basic profile info for /me endpoint
+        "r_emailaddress",   # Primary email address
+
         "w_member_social"   # Create, modify, and delete posts, comments, and reactions on your behalf
     ]
     scope_param = " ".join(allowed_scopes)
