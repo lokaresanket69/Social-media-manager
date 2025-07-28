@@ -829,8 +829,39 @@ def youtube_oauth2callback():
             # Avoid duplicate accounts by channel_id
             existing = c.execute('SELECT id FROM accounts WHERE platform_id=? AND name=?', (platform_id, result['name'])).fetchone()
             if not existing:
-                c.execute('INSERT INTO accounts (platform_id, name, credentials, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-                          (platform_id, result['name'], encrypted_credentials, datetime.utcnow().isoformat()))
+                c.execute('''
+                    INSERT INTO accounts (platform_id, name, credentials, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (
+                    platform_id, 
+                    result['name'], 
+                    encrypted_credentials, 
+                    datetime.utcnow().isoformat(), 
+                    datetime.utcnow().isoformat()
+                ))
+                conn.commit()
+                c.execute('SELECT id FROM accounts WHERE platform_id=? AND name=?', (platform_id, result['name']))
+                account_id = c.fetchone()['id']
+                c.execute('''
+                    INSERT INTO account_bindings (account_id, binding_type, binding_value)
+                    VALUES (?, ?, ?)
+                ''', (account_id, 'channel_id', result['channel_info']['id']))
+                c.execute('''
+                    INSERT INTO account_bindings (account_id, binding_type, binding_value)
+                    VALUES (?, ?, ?)
+                ''', (account_id, 'channel_name', result['channel_info']['name']))
+                c.execute('''
+                    INSERT INTO account_bindings (account_id, binding_type, binding_value)
+                    VALUES (?, ?, ?)
+                ''', (account_id, 'channel_description', result['channel_info']['description']))
+                c.execute('''
+                    INSERT INTO account_bindings (account_id, binding_type, binding_value)
+                    VALUES (?, ?, ?)
+                ''', (account_id, 'channel_keywords', result['channel_info']['keywords']))
+                c.execute('''
+                    INSERT INTO account_bindings (account_id, binding_type, binding_value)
+                    VALUES (?, ?, ?)
+                ''', (account_id, 'channel_thumbnail', result['channel_info']['thumbnail']))
                 conn.commit()
         conn.close()
         flash(f"YouTube channel '{result['channel_info']['name']}' added successfully!", "success")
